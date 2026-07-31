@@ -240,7 +240,7 @@ requires-dist = [
     { name = "django-unfold", specifier = ">=0.68" },
     { name = "gunicorn", marker = "extra == 'prod'", specifier = ">=23.0" },
     { name = "httpx", specifier = ">=0.28" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "rich", specifier = ">=14.0" },
     { name = "sentry-sdk", marker = "extra == 'prod'", specifier = ">=2.30" },
     { name = "structlog", specifier = ">=25.4" },
