@@ -105,10 +105,10 @@ wipe local rows and their review state.
 - `settings.TESTING` (`"pytest" in sys.modules`) is the test sentinel. There is no test settings
   module — the suite runs against the same settings production does.
 - `django-ninja` for any API, never DRF. `httpx` for outbound HTTP, never requests.
-- Email goes through **django-anymail**, provider chosen by `EMAIL_PROVIDER` (Postmark for the
-  PyOhio instance). Never import a provider backend directly. Send using
-  `organization.sender_address()`, never a hardcoded From address — it resolves the
-  organization's sender, falling back to the deployment default.
+- Email goes through **django-anymail**, provider chosen by `EMAIL_PROVIDER` (Mailgun for the
+  PyOhio instance). Never import a provider backend directly. Sender identity is per deployment:
+  let mail default to `DEFAULT_FROM_EMAIL` rather than passing a From address, and do not add
+  per-organization sender fields — see `plans/decisions.md` for why that was removed.
 - `django-typer` for management commands.
 - structlog with keyword events: `logger.info("program.synced", event_slug=..., talks=12)`.
 - Server-rendered templates with HTMX; minimal Alpine.js; DaisyUI + Tailwind via CDN, no JS build.

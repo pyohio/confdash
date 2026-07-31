@@ -19,30 +19,12 @@ class EventInline(TabularInline):
 
 @admin.register(Organization)
 class OrganizationAdmin(ModelAdmin):
-    list_display = ["name", "slug", "sender_address", "is_active", "created_at"]
+    list_display = ["name", "slug", "is_active", "created_at"]
     list_filter = ["is_active"]
     search_fields = ["name", "slug"]
     prepopulated_fields = {"slug": ["name"]}
     inlines = [OrganizationMembershipInline, EventInline]
     readonly_fields = ["created_at", "updated_at"]
-
-    fieldsets = [
-        (None, {"fields": ["name", "slug", "is_active"]}),
-        (
-            "Email",
-            {
-                "fields": ["from_email", "from_name"],
-                "description": "Leave blank to use the deployment default sender. A custom domain "
-                "must be verified with the configured email provider first.",
-            },
-        ),
-        ("Settings", {"fields": ["settings"]}),
-        ("Dates", {"fields": ["created_at", "updated_at"]}),
-    ]
-
-    @admin.display(description="Sends as")
-    def sender_address(self, obj: Organization) -> str:
-        return obj.sender_address()
 
 
 @admin.register(Event)

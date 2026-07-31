@@ -9,7 +9,7 @@
 - **Deployment target undecided**, pending a cost comparison of reusing the legacy DigitalOcean
   droplet versus Fly.io. Blocks M1.4 onward, since a magic link needs a real hostname. See
   `decisions.md`.
-- **Verify confdash.org with Postmark** (SPF/DKIM DNS records) before M1.4 sends anything. Until
+- **Verify confdash.org with Mailgun** (SPF/DKIM DNS records) before M1.4 sends anything. Until
   then mail from that domain will be rejected.
 - **Confirm PyOhio 2026 placeholder title convention** before tuning the M1.3 matcher.
 - **Measure YouTube Data API quota cost** against a real playlist during M1.2.

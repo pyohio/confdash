@@ -12,9 +12,11 @@ documented outside this repo at `~/checkouts/metarepo/tmp/django-patterns/`.
 
 ### Naming
 
-Project and Django settings package are both `confdash`. The working directory is `cd1` and
-the legacy project stays at `../confdash` for now; it gets sunset once the port in M2 lands.
-Nothing in this repo references the legacy project at runtime.
+The project and its distribution name are `confdash`; the Django settings package is `project/`,
+per the going-forward standard ("Django project metadata only, not a place for application
+logic"). The working directory is `cd1` and the legacy project stays at `../confdash` for now; it
+gets sunset once the port in M2 lands. Nothing in this repo references the legacy project at
+runtime.
 
 ### Tenancy: Organization -> Event
 
@@ -104,30 +106,33 @@ way to authenticate an existing `User`) and it is PyOhio-specific, which is exac
 of assumption this project is trying not to bake in. Revisit during M2, when the legacy
 project's GitHub-authenticated users need a migration path.
 
-### Email: Anymail, with provider and sender both configurable
+### Email: Anymail, provider configurable, sender per deployment
 
 Speaker magic links and review invitations are transactional mail, where deliverability is the
-whole game. The PyOhio-hosted instance sends through **Postmark** from **confdash.org**.
+whole game. The PyOhio-hosted instance sends through **Mailgun** from **confdash.org**, chosen on
+pricing.
 
 The provider is configuration rather than a dependency, via **django-anymail**: `EMAIL_PROVIDER`
 names any Anymail backend and `EMAIL_API_KEY` carries its credential. Leaving `EMAIL_PROVIDER`
-blank falls back to `EMAIL_URL`, which is how development reaches mailpit. Swapping providers is
-an env change.
+blank falls back to `EMAIL_URL`, which is how development reaches mailpit. Swapping providers is an
+env change, so the pricing comparison stays revisitable.
 
-Sender identity resolves at two levels, because both cases are real:
+Two Mailgun-specific knobs, both optional: `EMAIL_SENDER_DOMAIN` (Mailgun addresses its send API
+per domain; unset, Anymail derives it from the From address, which is right when
+`DEFAULT_FROM_EMAIL` is already on the Mailgun domain) and `EMAIL_API_URL` (its EU region is a
+different host).
 
-- **Deployment level** (`DEFAULT_FROM_EMAIL`): an organization self-hosting confdash has its own
-  domain and provider, and should need no per-organization setup at all.
-- **Organization level** (`Organization.from_email` / `from_name`): one instance hosting several
-  organizations can give each its own sender, so PyOhio's mail does not appear to come from
-  another conference. `Organization.sender_address()` resolves org-first, deployment-second.
+**Sender identity is per deployment, not per organization.** One multi-org instance sends
+everything as one address on confdash.org. An organization wanting its own domain runs its own
+instance with its own provider, which is a deployment concern rather than a data-model one.
 
-These are real columns rather than `settings` keys because they need email validation and are read
-on every send, which is the documented threshold for a JSONField value graduating to a column.
+Rejected: `Organization.from_email` / `from_name` columns with an org-first fallback. Built briefly,
+then removed. It bought nothing the deployment boundary does not already give, and it carried a
+real cost — every additional sender domain needs SPF/DKIM verification with the provider, so
+"self-service" per-org senders would have been an operator step wearing a data-model disguise.
 
-Operator caveat that no code can enforce: a custom sender domain must be verified with the
-provider (SPF/DKIM) or mail is rejected. Adding an organization with its own domain is therefore
-an operator step, not pure self-service.
+Operator caveat no code can enforce: the sending domain must be verified with the provider or mail
+is rejected.
 
 ### Conventions taken from the documented standard
 
@@ -165,8 +170,8 @@ It is on the critical path from M1.4 onward: a magic link has to point at a real
 PyOhio 2026 has already happened and its speakers are waiting, this is now a near-term decision
 rather than an end-of-M1 one.
 
-Outbound email is settled separately and is no longer coupled to this choice: Postmark via
-Anymail works from either target.
+Outbound email is settled separately and is no longer coupled to this choice: Mailgun via Anymail
+works from either target.
 
 ### YouTube OAuth consent flow
 

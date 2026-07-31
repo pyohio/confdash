@@ -159,34 +159,39 @@ WHITENOISE_AUTOREFRESH = DEBUG or TESTING
 # --- Email ------------------------------------------------------------------
 #
 # Speaker magic links are transactional mail, so deliverability matters. This deployment sends
-# through Postmark, but the provider is deliberately not baked in: an organization self-hosting
-# confdash will have its own provider and its own sending domain.
+# through Mailgun from confdash.org, but the provider is deliberately not baked in: an
+# organization self-hosting confdash will have its own provider and its own sending domain.
+#
+# Sender identity is per deployment, not per organization. One instance sends as one address.
 #
 # Two modes:
-#   EMAIL_PROVIDER set    -> that Anymail backend (postmark, sendgrid, ses, ...)
+#   EMAIL_PROVIDER set    -> that Anymail backend (mailgun, postmark, sendgrid, amazon_ses, ...)
 #   EMAIL_PROVIDER unset  -> EMAIL_URL, which is how development reaches mailpit
-#
-# The sending address is deployment-level here; an individual organization can override it. See
-# events.Organization.sender_address().
 
 EMAIL_PROVIDER = env.str("EMAIL_PROVIDER", default="").strip().lower()
 
 # The settings key each provider expects its credential under. Anymail reads these from the
 # ANYMAIL dict; providers absent from this map (Amazon SES uses boto3 credentials) need no key.
 ANYMAIL_CREDENTIAL_SETTINGS = {
+    "mailgun": "MAILGUN_API_KEY",
     "postmark": "POSTMARK_SERVER_TOKEN",
     "sendgrid": "SENDGRID_API_KEY",
-    "mailgun": "MAILGUN_API_KEY",
     "brevo": "BREVO_API_KEY",
     "resend": "RESEND_API_KEY",
     "mailjet": "MAILJET_API_KEY",
     "sparkpost": "SPARKPOST_API_KEY",
 }
 
+# Mailgun addresses its send API per domain rather than per account. Left unset, Anymail derives
+# the domain from the message's From address, which is correct whenever DEFAULT_FROM_EMAIL is on
+# the Mailgun domain. Set it only when the two differ.
+ANYMAIL_SENDER_DOMAIN_SETTINGS = {"mailgun": "MAILGUN_SENDER_DOMAIN"}
+
 ANYMAIL: dict = {}
 
 if EMAIL_PROVIDER:
     EMAIL_BACKEND = f"anymail.backends.{EMAIL_PROVIDER}.EmailBackend"
+
     credential_setting = ANYMAIL_CREDENTIAL_SETTINGS.get(EMAIL_PROVIDER)
     if credential_setting:
         api_key = env.str("EMAIL_API_KEY", default="")
@@ -196,12 +201,23 @@ if EMAIL_PROVIDER:
             )
         if api_key:
             ANYMAIL[credential_setting] = api_key
+
+    sender_domain_setting = ANYMAIL_SENDER_DOMAIN_SETTINGS.get(EMAIL_PROVIDER)
+    sender_domain = env.str("EMAIL_SENDER_DOMAIN", default="")
+    if sender_domain_setting and sender_domain:
+        ANYMAIL[sender_domain_setting] = sender_domain
+
+    # Non-default API endpoint, chiefly for providers with regional hosts: Mailgun's EU region is
+    # https://api.eu.mailgun.net/v3, and sending EU-resident data to the US default would be wrong.
+    api_url = env.str("EMAIL_API_URL", default="")
+    if api_url:
+        ANYMAIL[f"{EMAIL_PROVIDER.upper()}_API_URL"] = api_url
 else:
     # consolemail:// by default, smtp://mailpit:1025 inside the compose stack.
     vars().update(env.email_url("EMAIL_URL", default="consolemail://"))
 
-# Fallback sender, used when an organization has not set its own. The domain must be verified
-# with the configured provider or mail will be rejected.
+# The sender for all mail this deployment sends. Its domain must be verified with the configured
+# provider or mail will be rejected.
 #
 # `or` rather than a bare default throughout: an annotated .env.example carries commented-out keys
 # as `KEY=`, and django-environ treats an empty value as set, so a default alone would be skipped

@@ -9,8 +9,6 @@ why the three-level Organization/Series/Edition shape was rejected.
 Scoping is enforced in application code, not row-level security.
 """
 
-from email.utils import formataddr
-
 from django.db import models
 from django.utils.text import slugify
 
@@ -25,24 +23,6 @@ class Organization(BaseModel):
 
     is_active = models.BooleanField(default=True)
 
-    # Sender identity for mail this organization's events send, chiefly speaker magic links and
-    # review invitations. Real columns rather than `settings` keys because they need email
-    # validation and are read on every send.
-    #
-    # Blank falls back to the deployment's DEFAULT_FROM_EMAIL. Setting a custom address only
-    # works if that domain is verified with the configured email provider, which is an operator
-    # step outside this app.
-    from_email = models.EmailField(
-        blank=True,
-        help_text="Sender address for this organization's mail. Blank uses the deployment default. "
-        "The domain must be verified with the email provider.",
-    )
-    from_name = models.CharField(
-        max_length=100,
-        blank=True,
-        help_text="Display name shown alongside the sender address, e.g. 'PyOhio'. Defaults to the organization name.",
-    )
-
     # Policy that does not yet deserve a column. Events override these; see resolve_setting.
     settings = models.JSONField(default=dict, blank=True)
 
@@ -56,20 +36,6 @@ class Organization(BaseModel):
         if not self.slug:
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
-
-    def sender_address(self) -> str:
-        """Return the From header for mail sent on this organization's behalf.
-
-        Falls back to the deployment default when the organization has not set its own, so a
-        single-tenant install needs no per-organization configuration at all.
-        """
-        from django.conf import settings as django_settings
-
-        if not self.from_email:
-            return django_settings.DEFAULT_FROM_EMAIL
-
-        display_name = self.from_name or self.name
-        return formataddr((display_name, self.from_email))
 
 
 class OrganizationMembership(BaseModel):
