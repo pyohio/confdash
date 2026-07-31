@@ -104,6 +104,31 @@ way to authenticate an existing `User`) and it is PyOhio-specific, which is exac
 of assumption this project is trying not to bake in. Revisit during M2, when the legacy
 project's GitHub-authenticated users need a migration path.
 
+### Email: Anymail, with provider and sender both configurable
+
+Speaker magic links and review invitations are transactional mail, where deliverability is the
+whole game. The PyOhio-hosted instance sends through **Postmark** from **confdash.org**.
+
+The provider is configuration rather than a dependency, via **django-anymail**: `EMAIL_PROVIDER`
+names any Anymail backend and `EMAIL_API_KEY` carries its credential. Leaving `EMAIL_PROVIDER`
+blank falls back to `EMAIL_URL`, which is how development reaches mailpit. Swapping providers is
+an env change.
+
+Sender identity resolves at two levels, because both cases are real:
+
+- **Deployment level** (`DEFAULT_FROM_EMAIL`): an organization self-hosting confdash has its own
+  domain and provider, and should need no per-organization setup at all.
+- **Organization level** (`Organization.from_email` / `from_name`): one instance hosting several
+  organizations can give each its own sender, so PyOhio's mail does not appear to come from
+  another conference. `Organization.sender_address()` resolves org-first, deployment-second.
+
+These are real columns rather than `settings` keys because they need email validation and are read
+on every send, which is the documented threshold for a JSONField value graduating to a column.
+
+Operator caveat that no code can enforce: a custom sender domain must be verified with the
+provider (SPF/DKIM) or mail is rejected. Adding an organization with its own domain is therefore
+an operator step, not pure self-service.
+
 ### Conventions taken from the documented standard
 
 Audited against `~/checkouts/metarepo/tmp/django-patterns/10-outline.md` after the initial
@@ -124,11 +149,24 @@ bootstrap. Adopted from there and worth not re-litigating:
 
 ### Deployment target
 
-Not needed to bootstrap, and not needed for M1 development. Two candidates: podman + systemd
-via Ansible (legacy confdash precedent, existing infra to reuse) or Fly.io (lighter, no host
-to own). The container build in CI produces an image either way, so this decision only blocks
-the first real deploy. Decide before the end of M1, since speaker magic links require a real
-hostname and working outbound email.
+Open pending a cost comparison. Two candidates:
+
+- **Reuse the legacy PyOhio infrastructure.** Heavier than it first sounds: a DigitalOcean
+  droplet provisioned by Pulumi, configured by Ansible, secrets in Doppler under
+  `pyohio/confdash`. The playbooks and the SSL story already exist, and the droplet may be
+  reusable directly.
+- **Fly.io.** Fewer steps to a first working URL with TLS and managed Postgres, but it means
+  PyOhio running things in two places.
+
+The container build in CI produces an image either way, so this blocks only the first real deploy.
+M1.1 through M1.3 need none of it.
+
+It is on the critical path from M1.4 onward: a magic link has to point at a real hostname. Since
+PyOhio 2026 has already happened and its speakers are waiting, this is now a near-term decision
+rather than an end-of-M1 one.
+
+Outbound email is settled separately and is no longer coupled to this choice: Postmark via
+Anymail works from either target.
 
 ### YouTube OAuth consent flow
 

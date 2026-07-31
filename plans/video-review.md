@@ -71,7 +71,9 @@ Passwordless login, needed before anyone can be invited.
 Done when a speaker can click an emailed link and land on their own video, and cannot reach
 anyone else's.
 
-Blocked on: a deployment target with working outbound email and a real hostname.
+Email is settled: Anymail with Postmark, sending from confdash.org, per-organization sender
+override available. Still needs a deployment with a real hostname, since a magic link has to point
+somewhere, and DNS verification of the sending domain with Postmark.
 
 ### M1.5 Speaker review
 

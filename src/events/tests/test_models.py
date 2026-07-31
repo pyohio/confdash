@@ -6,6 +6,7 @@ the legacy one, so the scoping rules get explicit coverage.
 
 import pytest
 from django.db import IntegrityError
+from django.test import override_settings
 
 from events.models import Event, Organization, OrganizationMembership
 
@@ -74,6 +75,35 @@ class TestSettingResolution:
         event.settings = {"captions_required": False}
 
         assert event.resolve_setting("captions_required") is False
+
+
+class TestSenderAddress:
+    """Sender identity resolution. A single-tenant install needs no per-org configuration."""
+
+    def test_falls_back_to_the_deployment_default(self, organization):
+        with override_settings(DEFAULT_FROM_EMAIL="confdash@confdash.org"):
+            assert organization.sender_address() == "confdash@confdash.org"
+
+    def test_uses_the_organization_address_when_set(self, organization):
+        organization.from_email = "speakers@pyohio.org"
+        assert organization.sender_address() == "PyOhio <speakers@pyohio.org>"
+
+    def test_from_name_overrides_the_organization_name(self, organization):
+        organization.from_email = "speakers@pyohio.org"
+        organization.from_name = "PyOhio Video Team"
+        assert organization.sender_address() == "PyOhio Video Team <speakers@pyohio.org>"
+
+    def test_display_name_with_a_comma_is_quoted(self, organization):
+        """formataddr must escape names that would otherwise break the From header."""
+        organization.name = "PyOhio, Inc."
+        organization.from_email = "speakers@pyohio.org"
+        assert organization.sender_address() == '"PyOhio, Inc." <speakers@pyohio.org>'
+
+    def test_two_organizations_can_send_from_different_domains(self, organization, other_organization):
+        organization.from_email = "speakers@pyohio.org"
+        other_organization.from_email = "hello@otherconf.example"
+
+        assert organization.sender_address() != other_organization.sender_address()
 
 
 class TestMembership:

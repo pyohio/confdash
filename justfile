@@ -46,7 +46,8 @@ build *ARGS:
     just host-only
     docker compose build {{ARGS}}
 
-# Full restart from scratch. Use after changing Dockerfiles or dependencies.
+# Full restart from scratch. Use after changing Dockerfiles; dependency changes are picked up on
+# every start, so `just restart app` is enough for those.
 bounce *ARGS:
     just host-only
     just down {{ARGS}}

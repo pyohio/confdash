@@ -6,6 +6,10 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "django>=6.0",
+    # Postmark is what this deployment uses; anymail keeps the provider swappable, since a
+    # self-hosting organization will have its own. The extra only pulls Postmark's requests
+    # shim, so other backends stay available without it.
+    "django-anymail[postmark]>=15.1",
     "django-environ>=0.12",
     "django-ninja>=1.4",
     "django-typer>=3.2",

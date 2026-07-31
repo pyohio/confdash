@@ -49,6 +49,9 @@ services:
       EMAIL_URL: smtp://mailpit:1025
       # Applied on container start so a fresh checkout comes up with a usable schema.
       RUN_MIGRATIONS: "true"
+      # Reconcile the venv volume with uv.lock on start, so a dependency change does not leave the
+      # container running against a stale environment.
+      SYNC_DEPENDENCIES: "true"
     env_file:
       - path: .env
         required: false

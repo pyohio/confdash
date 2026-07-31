@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "anymail",
     "django_typer",
     # `common` is deliberately absent: it holds plain Python and abstract models, not a Django
     # app. Abstract models do not require app registration.
@@ -156,10 +157,59 @@ STORAGES = {
 WHITENOISE_AUTOREFRESH = DEBUG or TESTING
 
 # --- Email ------------------------------------------------------------------
+#
+# Speaker magic links are transactional mail, so deliverability matters. This deployment sends
+# through Postmark, but the provider is deliberately not baked in: an organization self-hosting
+# confdash will have its own provider and its own sending domain.
+#
+# Two modes:
+#   EMAIL_PROVIDER set    -> that Anymail backend (postmark, sendgrid, ses, ...)
+#   EMAIL_PROVIDER unset  -> EMAIL_URL, which is how development reaches mailpit
+#
+# The sending address is deployment-level here; an individual organization can override it. See
+# events.Organization.sender_address().
 
-vars().update(env.email_url("EMAIL_URL", default="consolemail://"))
-DEFAULT_FROM_EMAIL = env.str("DEFAULT_FROM_EMAIL", default="confdash@localhost")
-SERVER_EMAIL = DEFAULT_FROM_EMAIL
+EMAIL_PROVIDER = env.str("EMAIL_PROVIDER", default="").strip().lower()
+
+# The settings key each provider expects its credential under. Anymail reads these from the
+# ANYMAIL dict; providers absent from this map (Amazon SES uses boto3 credentials) need no key.
+ANYMAIL_CREDENTIAL_SETTINGS = {
+    "postmark": "POSTMARK_SERVER_TOKEN",
+    "sendgrid": "SENDGRID_API_KEY",
+    "mailgun": "MAILGUN_API_KEY",
+    "brevo": "BREVO_API_KEY",
+    "resend": "RESEND_API_KEY",
+    "mailjet": "MAILJET_API_KEY",
+    "sparkpost": "SPARKPOST_API_KEY",
+}
+
+ANYMAIL: dict = {}
+
+if EMAIL_PROVIDER:
+    EMAIL_BACKEND = f"anymail.backends.{EMAIL_PROVIDER}.EmailBackend"
+    credential_setting = ANYMAIL_CREDENTIAL_SETTINGS.get(EMAIL_PROVIDER)
+    if credential_setting:
+        api_key = env.str("EMAIL_API_KEY", default="")
+        if not api_key and not DEBUG:
+            raise ImproperlyConfigured(
+                f"EMAIL_API_KEY must be set when EMAIL_PROVIDER={EMAIL_PROVIDER!r} and DEBUG=False."
+            )
+        if api_key:
+            ANYMAIL[credential_setting] = api_key
+else:
+    # consolemail:// by default, smtp://mailpit:1025 inside the compose stack.
+    vars().update(env.email_url("EMAIL_URL", default="consolemail://"))
+
+# Fallback sender, used when an organization has not set its own. The domain must be verified
+# with the configured provider or mail will be rejected.
+#
+# `or` rather than a bare default throughout: an annotated .env.example carries commented-out keys
+# as `KEY=`, and django-environ treats an empty value as set, so a default alone would be skipped
+# in favour of an empty string.
+DEFAULT_FROM_EMAIL = env.str("DEFAULT_FROM_EMAIL", default="") or "confdash@localhost"
+
+# Error mail from Django itself, which is operator-facing rather than organization-facing.
+SERVER_EMAIL = env.str("SERVER_EMAIL", default="") or DEFAULT_FROM_EMAIL
 
 # --- Security ---------------------------------------------------------------
 
