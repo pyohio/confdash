@@ -1,0 +1,22 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+
+# uv build output
+dist/
+*.egg-info/
+
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+
+# collectstatic output; built into the image, never committed
+staticfiles/
+media/
+
+.DS_Store
+.idea/
+*.swp

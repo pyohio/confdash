@@ -1,0 +1,144 @@
+name: Checks and Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Test-only values. Production secrets come from the deployment environment; these exist so
+  # settings.py does not hard-fail, and are never valid anywhere real.
+  SECRET_KEY: ci-only-not-a-real-secret-key-long-enough-for-check-deploy-w009
+  FIELD_ENCRYPTION_KEY: cbrN3vfnpxYpMHRA_gN3dcbXWv-K5S8VQmM3ZzDcXtA=
+  DEBUG: "True"
+
+jobs:
+  lint:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - run: uv sync --locked
+
+      - name: ruff check
+        run: uv run ruff check --output-format=github
+
+      - name: ruff format --check
+        run: uv run ruff format --check
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - run: uv sync --locked
+
+      # No database service here on purpose: if a test marked `unit` needs one, that is a
+      # mismarked test and this job is what catches it.
+      - name: pytest -m unit
+        run: uv run pytest -m unit
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: confdash
+          POSTGRES_USER: confdash
+          POSTGRES_PASSWORD: confdash
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U confdash -d confdash"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://confdash:confdash@localhost:5432/confdash
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - run: uv sync --locked
+
+      - name: Check for missing migrations
+        run: uv run python src/manage.py makemigrations --check --dry-run
+
+      - name: django check --deploy
+        # Runs with DEBUG=False so the production security checks actually apply.
+        env:
+          DEBUG: "False"
+          ALLOWED_HOSTS: example.org
+        run: uv run python src/manage.py check --deploy --fail-level WARNING
+
+      - name: pytest -m integration
+        run: uv run pytest -m integration --cov --cov-report=term-missing
+
+  container:
+    name: Container build
+    runs-on: ubuntu-latest
+    # A `bump:` commit only moves the version and changelog. The Release workflow builds and
+    # publishes the image for the tag it pushes, so building here would be a duplicate.
+    if: "!startsWith(github.event.head_commit.message, 'bump:')"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: confdash:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify the image boots and answers the healthcheck
+        run: |
+          docker run -d --name confdash-ci \
+            -e SECRET_KEY=ci-only-not-a-real-secret-key-long-enough-for-check-deploy-w009 \
+            -e FIELD_ENCRYPTION_KEY=cbrN3vfnpxYpMHRA_gN3dcbXWv-K5S8VQmM3ZzDcXtA= \
+            -e DEBUG=False \
+            -e ALLOWED_HOSTS='*' \
+            -e SECURE_SSL_REDIRECT=False \
+            -e DATABASE_URL=postgres://unused:unused@localhost:5432/unused \
+            -p 8000:8000 \
+            confdash:ci
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://localhost:8000/healthz/; then
+              echo "healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "container never became healthy" >&2
+          docker logs confdash-ci
+          exit 1

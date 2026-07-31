@@ -1,0 +1,70 @@
+# Local development stack. Production uses the multi-stage Dockerfile; this uses Dockerfile.dev
+# for hot reload with the source bind-mounted.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-confdash}
+      POSTGRES_USER: ${POSTGRES_USER:-confdash}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-confdash}
+    ports:
+      # Exposed so host tools (psql, a GUI client) can connect. Not needed by the app; override
+      # when another project already holds the port.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Postgres 18+ wants a single mount at /var/lib/postgresql, not at .../data: the data
+      # directory becomes a subdirectory so `pg_upgrade --link` can work across major versions
+      # without crossing a mount boundary.
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-confdash} -d ${POSTGRES_DB:-confdash}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Catches all outbound mail locally so speaker magic links can be clicked in development
+  # without sending anything. Web UI at http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      # Non-default host ports so this stack can run alongside other projects' mailpit
+      # containers. Container-internal ports stay standard, so EMAIL_URL is unaffected.
+      - "${MAILPIT_UI_PORT:-8026}:8025"
+      - "${MAILPIT_SMTP_PORT:-1026}:1025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: python src/manage.py runserver 0.0.0.0:8000
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-confdash}:${POSTGRES_PASSWORD:-confdash}@postgres:5432/${POSTGRES_DB:-confdash}
+      DEBUG: ${DEBUG:-True}
+      # Not interpolated from .env on purpose: inside the stack mail should always go to mailpit,
+      # while .env keeps a host-usable default for running Django directly.
+      EMAIL_URL: smtp://mailpit:1025
+      # Applied on container start so a fresh checkout comes up with a usable schema.
+      RUN_MIGRATIONS: "true"
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      # Bind-mount the source for hot reload. The named volume keeps the image's virtualenv
+      # from being shadowed by anything on the host.
+      - .:/app
+      - venv:/app/.venv
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  venv:

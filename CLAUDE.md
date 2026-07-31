@@ -1,0 +1,169 @@
+# CLAUDE.md
+
+Guidance for Claude Code when working in this repository.
+
+## What this is
+
+Conference management for community events, multi-organization and multi-year from the start. The
+first feature is video review: organizers match talk videos to talks, speakers review and correct
+captions and approve publication.
+
+This replaces the original confdash at `../confdash`, which stays running until the M2 port lands.
+Nothing here depends on it at runtime; treat it as reference material only.
+
+## Commands
+
+```bash
+just                      # list all recipes
+just up / down / bounce   # docker-compose stack; bounce after dependency changes
+just follow               # tail logs
+just manage <cmd>         # any manage.py command
+just migrate / makemigrations
+just test                 # full suite
+just test-unit            # no database
+just test-integration     # needs the database
+just lint / just format   # ruff (fmt aliases format)
+just check                # lint + format check + tests — run before pushing
+```
+
+Recipes work from the host or from inside the app container. Postgres must be up for anything
+touching the database: `just up -d postgres`.
+
+Single test: `just test src/events/tests/test_models.py::TestEvent::test_series_groups_iterations`
+
+The justfile sets `positional-arguments`, so `manage`, `shell`, and the `test*` recipes forward
+arguments via `"$@"` and preserve quoting: `just shell -c "print(1+1)"` works. Recipes that
+delegate to another `just` recipe (`migrate`, `makemigrations`, `loaddata`) re-parse their
+arguments, so they suit simple flags only.
+
+Outbound mail goes to mailpit in the dev stack, readable at http://localhost:8026. Nothing sends
+real email locally.
+
+## Architecture
+
+```
+src/
+  project/         settings, urls, wsgi/asgi, logging — no application logic
+  common/          plain Python and abstract models, NOT a Django app
+  accounts/        User (email USERNAME_FIELD, passwordless), LoginToken
+  events/          Organization, OrganizationMembership, Event
+  integrations/    ProviderConnection, EventProviderBinding, SyncRun
+    providers/     capability protocols (base.py) and per-provider adapters
+  templates/       one tree, organized by app; partials/ for HTMX fragments
+```
+
+`common/` is intentionally **not** in `INSTALLED_APPS`: Django app → its own app directory, plain
+module or abstract model → `common/`. Abstract models need no app registration.
+
+### Tenancy
+
+`Organization` → `Event`, where an `Event` is one iteration (PyOhio 2026). `Event.series` groups
+iterations across years. Everything holding conference data has an `event` FK. Scoping is enforced
+in application code, not row-level security.
+
+Use `event.resolve_setting(key, default)` for policy: it checks the event, then the organization,
+then the default. Presence wins over truthiness, so an event can override `True` with `False`.
+
+### The provider abstraction
+
+This is the load-bearing design decision. The app depends on **capabilities**
+(`talk_source`, `ticketing`, `video_host`), never on Pretalx, Tito, or YouTube.
+
+**Nothing outside `integrations/providers/` may import a provider module or branch on a provider
+name.** Application code does:
+
+```python
+adapter = resolve_adapter(event, Capability.TALK_SOURCE)
+talks = adapter.fetch_talks()
+```
+
+Adding a provider is a new module under `providers/`, decorated with `@register`, imported in
+`providers/__init__.py`. No migration, no change to application code.
+
+Adapters are thin: httpx to a remote API, returning the provider-neutral dataclasses from
+`providers/base.py`. **Adapters never touch the ORM** — sync services own all persistence. So a
+provider bug cannot corrupt local state, and adapters are testable with recorded fixtures.
+
+Credentials live on org-scoped `ProviderConnection`; `EventProviderBinding` selects one per
+capability and adds event-specific config. An org can hold several connections for the same
+provider, since Pretalx issues credentials per event: uniqueness is `(organization, slug)`.
+
+### Synced data is mirrored locally
+
+`Talk`, `Speaker`, `Video` are local canonical models populated by sync, with provider IDs in
+separate `external_id` fields — never as primary keys. Syncs are **idempotent upserts keyed on
+`(event, external_id)`, and never delete on absence**: a provider returning a short list must not
+wipe local rows and their review state.
+
+## Conventions
+
+- Subclass `common.models.BaseModel` for new models. UUIDv7 PKs, never sequential integers: IDs
+  appear in URLs emailed to speakers.
+- `JSONField` is the standard tool for structured-but-variable data: `User.data`,
+  `Organization.settings` / `Event.settings`, provider `config`, synced `raw` payloads. Anything
+  needing a query, a constraint, or validation graduates to a real column.
+- `settings.TESTING` (`"pytest" in sys.modules`) is the test sentinel. There is no test settings
+  module — the suite runs against the same settings production does.
+- `django-ninja` for any API, never DRF. `httpx` for outbound HTTP, never requests.
+- `django-typer` for management commands.
+- structlog with keyword events: `logger.info("program.synced", event_slug=..., talks=12)`.
+- Server-rendered templates with HTMX; minimal Alpine.js; DaisyUI + Tailwind via CDN, no JS build.
+- Single `settings.py`. Environment differences via env vars and `if DEBUG`, never split settings.
+- Secrets required in production hard-fail when `DEBUG=False`; insecure fallbacks only under
+  `DEBUG=True`.
+- Line length 120. Ruff only — no Black, no pre-commit.
+- Migrations are excluded from ruff. Review generated migrations before committing.
+
+## Security invariants
+
+Do not weaken these without discussion; they are why the credential design looks the way it does.
+
+- **Provider credentials are encrypted at rest** and read only through
+  `ProviderConnection.get_credentials()`. Never add a plaintext credential field, never expose
+  credentials as readable text in the admin, never put them in a fixture.
+- **Never log a secret.** `project/logging.py` redacts sensitive keys at any nesting depth, and
+  `src/project/tests/test_logging.py` guards it. Add new secret key names to `SENSITIVE_KEYS`.
+- **`FIELD_ENCRYPTION_KEY` loss is unrecoverable** — every org's credentials go with it.
+- **Magic-link tokens are stored hashed**, single-use, and expiring.
+- **Cross-organization access must be impossible.** `EventProviderBinding.clean()` rejects a
+  connection from another organization; that rule cannot be a DB constraint, so it needs its test.
+
+## Testing
+
+- pytest + pytest-django. `pythonpath = ["src"]`, `filterwarnings = ["error"]`.
+- **Every test must carry exactly one of the `unit` or `integration` markers.** CI runs unit tests
+  with no database, so a mismarked test fails there. Prefer per-test markers over module-level
+  `pytestmark` in files that mix both.
+- Plain fixtures and factory functions calling real service-layer code. No model-bakery or
+  factory_boy.
+- Provider adapters: recorded JSON response fixtures under
+  `src/integrations/tests/fixtures/<provider>/`. No live network in the suite.
+- Sync services and the resolver: the fake adapters in `integrations/tests/fakes.py`, registered
+  by the `fake_providers` fixture, which snapshots and restores the registry.
+
+## Workflow
+
+- Design docs go in `plans/` before the code. One file per substantial feature, plus `issues.md`
+  and `nits.md`. Prune entries as work lands so `plans/` stays an accurate to-do list.
+- `docs/` is reference material (things that are true), `plans/` is forward-looking.
+- Read `plans/decisions.md` before revisiting an architectural choice: it records what was
+  rejected and why.
+- Conventional Commits. PRs are squash-merged, so the PR title becomes the commit on main and
+  drives versioning — a CI job lints it.
+- Version bumps are a manual GitHub Actions workflow, never automatic on merge.
+- Do not commit, branch, push, or open a PR unless explicitly asked.
+
+## Not using
+
+Deliberate choices, not oversights:
+
+- **DRF** — django-ninja instead.
+- **requests** — httpx instead.
+- **Celery** — django-tasks (Django 6 native) if background jobs are needed.
+- **model-bakery / factory_boy** — plain fixtures and factory functions.
+- **pre-commit** — `just check` locally, CI is the real gate.
+- **Black** — ruff format.
+- **Split settings** — one `settings.py`.
+- **Row-level security** — app-level scoping.
+- **A type checker** — not yet, consistent with sibling projects.
+- **Provider names in application code** — capabilities and the registry instead.
