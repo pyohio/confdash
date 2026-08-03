@@ -15,9 +15,9 @@ dependencies = [
     "django-typer>=3.2",
     "rich>=14.0",
     "django-unfold>=0.68",
-    "cryptography>=46.0",
+    "cryptography>=50.0.0",
     "httpx>=0.28",
-    "psycopg[binary]>=3.2",
+    "psycopg[binary]>=3.3.4",
     "structlog>=25.4",
     "whitenoise>=6.9",
 ]
