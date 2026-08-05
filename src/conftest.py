@@ -99,6 +99,30 @@ def talk_binding(event, talk_connection) -> EventProviderBinding:
 
 
 @pytest.fixture
+def video_connection(organization, fake_providers) -> ProviderConnection:
+    connection = ProviderConnection(
+        organization=organization,
+        slug="fake-videos-2026",
+        name="Fake video host (2026)",
+        capability=Capability.VIDEO_HOST,
+        provider="fake",
+    )
+    connection.set_credentials({"refresh_token": "test-refresh-token"})
+    connection.save()
+    return connection
+
+
+@pytest.fixture
+def video_binding(event, video_connection) -> EventProviderBinding:
+    return EventProviderBinding.objects.create(
+        event=event,
+        capability=Capability.VIDEO_HOST,
+        connection=video_connection,
+        config={"playlist_id": "PLtest123"},
+    )
+
+
+@pytest.fixture
 def fake_talks(fake_providers):
     """Set the records `FakeTalkSource` returns, restoring the class attributes afterwards.
 

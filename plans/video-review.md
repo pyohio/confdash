@@ -67,9 +67,16 @@ from the schedule when uploading. Formatting differs though: separators, punctua
 truncation. So matching is title-based and should get most of the way there on its own, with human
 confirmation rather than human data entry.
 
-- Manual entry first: a video ID or URL field on the talk, editable in the admin. This is the floor,
-  it works on day one, and it is the fallback whenever the matcher is unsure. Everything below only
-  makes it faster.
+- Manual entry first: **built.** A video reference field, editable from the video admin or inline on a
+  talk, with `videos.services` owning the match so the confirm queue and the admin share one
+  implementation and neither can forget the audit stamps. This is the floor, it works before any OAuth
+  setup, and it stays the fallback whenever the matcher is unsure. Everything below only makes it
+  faster.
+
+  Turning a pasted reference into a provider id is delegated to the video host's
+  `parse_external_id`, since recognizing a watch URL is provider knowledge. With no host configured a
+  bare id is accepted but a URL is refused: `external_id` is unique per event, so storing an
+  uninterpreted URL would silently duplicate the video the first time a real sync reported it.
 - Suggestion pass: normalized fuzzy match of video title against talk titles, producing ranked
   candidates with scores. Deterministic and testable, no ML. Normalization has to survive
   punctuation, case, separator, and whitespace differences, since those are the expected variance.
@@ -79,10 +86,15 @@ confirmation rather than human data entry.
 - Bulk-accept high-confidence matches, with an undo.
 
 Expect videos that match no talk at all: the 2025 playlist included a welcome, closing remarks, and
-a keynote recording alongside the talks. Marking a video explicitly unmatchable is a normal outcome,
-not an error. Expect the reverse too, since not every talk gets a usable recording.
+a keynote recording alongside the talks. Marking a video **standalone** is a normal outcome, not an
+error. Expect the reverse too, since not every talk gets a usable recording.
 
-Done when every video for an event is either matched to a talk or explicitly marked unmatchable.
+Standalone does not mean excluded. Those videos still want review and publication, they just have no
+speaker to ask, so **staff review them instead**. `review_track` derives from the matching outcome, and
+both tracks converge on the same `approved` state and the same publication path.
+
+Done when every video for an event is either matched to a talk or marked standalone, and neither
+outcome leaves a video that cannot be published.
 
 Open: nothing blocking. The scorer can be tuned once a real playlist exists to test against.
 
@@ -140,12 +152,31 @@ Open: caption editor scope. A plain textarea over the raw SRT/VTT is hours of wo
 genuinely usable by a technical audience; a cue-by-cue editor with playback sync is a
 significant build. Start with the former unless the audience argues otherwise.
 
+### M1.5a Staff review of standalone videos
+
+Standalone videos still want review and publication, they just have no speaker to ask. An organizer
+holding `Scope.VIDEOS` reviews them instead.
+
+Deliberately the **same surface** as M1.5 rather than a parallel one: player, caption view, caption
+edit, approve. The only differences are who may reach it and that there is nobody to invite. Building
+it twice would mean two caption editors and two approval paths to keep honest, which is how they drift.
+
+- Reuses M1.5's review view, authorized by scope instead of by speaker identity.
+- Approve stamps `review_state`, `approved_at`, and `approved_by` exactly as a speaker approval does,
+  so M1.7 needs no special case.
+- A button that enqueues publication, on the same `ProviderWrite` path M1.7 uses.
+
+Numbered after M1.5 because it is that surface with different authorization. Cheap once M1.5 exists,
+and near-free to get wrong-headed about if built first.
+
 ### M1.6 Invitations
 
 - Compose and send review invitations per speaker, per video.
 - Templated email, org/event branding from settings.
 - Organizer view of invitation status: sent, opened, approved, stale.
 - Resend and bulk-send.
+- Never invite anyone for a standalone video: there is no speaker, and M1.5a covers it. A bulk-send
+  that quietly skips them is the correct behavior, not an omission.
 
 Done when an organizer can invite every matched talk's speakers in one action and see who has
 not responded.
@@ -169,9 +200,16 @@ double-published or silently skipped.
 
 ## Sequencing
 
-M1.1 and M1.2 are independent and can go in either order. M1.3 needs both. M1.4 gates M1.5 and
-M1.6. M1.7 is last because it is the only irreversible step — a video made public cannot be
-un-published without someone noticing.
+M1.1 and M1.2 are independent and can go in either order. M1.3 needs both. M1.4 gates M1.5 and M1.6.
+M1.5a follows M1.5, being the same surface under different authorization. M1.7 is last because it is the
+only irreversible step: a video made public cannot be un-published without someone noticing.
+
+M1.3a is optional and sequences with M1.7, since both are provider writes wanting the same dry-run and
+audit treatment.
+
+One useful property of M1.5a: standalone videos need no magic links, so **staff review does not depend
+on M1.4 or on a deployed hostname**. If the deployment decision slips, the welcome and closing-remarks
+videos can still be reviewed and queued for publication while speaker review waits.
 
 ## Risks
 

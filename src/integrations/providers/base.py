@@ -167,7 +167,11 @@ class Ticketing(ProviderAdapter, Protocol):
 
 @runtime_checkable
 class VideoHost(ProviderAdapter, Protocol):
-    """Video listing, captions, and privacy control. YouTube today."""
+    """Video listing, captions, and privacy control. YouTube today.
+
+    No upload method, deliberately. Recordings are uploaded by whoever produces them, outside this
+    app; a video host is something this app reads from and annotates, never publishes to.
+    """
 
     def list_videos(self) -> list[VideoRecord]: ...
 
@@ -178,6 +182,19 @@ class VideoHost(ProviderAdapter, Protocol):
         ...
 
     def set_privacy(self, external_id: str, status: PrivacyStatus) -> None: ...
+
+    @staticmethod
+    def parse_external_id(value: str) -> str:
+        """Turn a pasted reference into this provider's video id.
+
+        Organizers link videos by pasting whatever they have to hand, which is usually a watch URL
+        rather than a bare id. Recognizing those forms is provider knowledge, so it lives here rather
+        than in a form: nothing outside `providers/` should know what a YouTube URL looks like.
+
+        A static method so manual linking works before any credentials are configured. Raises
+        `ValueError` on something unrecognizable.
+        """
+        ...
 
 
 CAPABILITY_PROTOCOLS: dict[Capability, type] = {

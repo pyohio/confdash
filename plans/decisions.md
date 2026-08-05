@@ -244,11 +244,39 @@ rather than an end-of-M1 one.
 Outbound email is settled separately and is no longer coupled to this choice: Mailgun via Anymail
 works from either target.
 
-### YouTube OAuth consent flow
+### YouTube OAuth: app audience, and the tenancy fork it creates
 
-The credential model supports it, but M1 seeds the YouTube connection with a refresh token
-obtained out of band. A self-service "Connect YouTube" flow needs a Google app verification
-review for sensitive scopes, which is a project of its own and is not on the M1 critical path.
+The credential model supports a self-service "Connect YouTube" flow, but M1 seeds the connection with
+a refresh token obtained out of band. Nothing has been created in Google Cloud yet, so no consent
+screen exists and no token expiry clock is running: this is a setup decision to make before creating
+credentials, not a deadline.
+
+The choice of **app audience** is the consequential part, because it is a property of the Google Cloud
+project rather than of the organization connecting:
+
+| Audience | Refresh tokens | `youtube.force-ssl` review | Who can connect |
+| --- | --- | --- | --- |
+| Internal | No expiry | Not required | Only the project's own Workspace users |
+| External, In Production | No expiry | Required | Any Google account |
+| External, Testing | Expire after 7 days | Not required | Test users, max 100 |
+
+PyOhio has Google Workspace, so **Internal is the right setting for the PyOhio instance**: no 7-day
+expiry, and no verification review despite `youtube.force-ssl` being a sensitive scope.
+
+The fork: Internal apps are restricted to users inside the project's own Workspace organization. An
+organization with only a personal Google account and a YouTube channel, no Workspace, **cannot connect
+to a shared instance configured Internal**. Serving those organizations means either External plus a
+verification review, or that organization self-hosting with its own Google Cloud project.
+
+That is the same shape as the two other per-project ceilings already recorded, the YouTube quota and
+the email sending domain, and it resolves the same way: a shared instance is convenient until a tenant
+needs its own provider relationship, at which point self-hosting is the answer. No code changes with
+the audience setting, so this is an operator decision rather than an architectural one.
+
+Setup detail that is easy to get wrong: the PyOhio channel is a **Brand Account**, so the OAuth consent
+flow presents a channel picker. Authorizing as the personal Google account yields credentials that work
+and see the wrong channel. The Workspace user doing the authorizing needs owner or manager access to the
+brand channel.
 
 ### Background job runner
 

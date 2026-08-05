@@ -173,7 +173,7 @@ Video
   published_at    nullable
   matched_by      FK -> accounts.User, nullable    # who confirmed the talk link
   matched_at      nullable
-  unmatchable     bool              # deliberately has no talk, e.g. a welcome or closing remarks
+  standalone      bool              # deliberately has no talk; staff review it instead of a speaker
   review_state    pending | invited | changes_requested | approved
   approved_at     nullable
   approved_by     FK -> accounts.User, nullable
@@ -215,10 +215,20 @@ are really a pair of facts.
 in `ProviderWrite`, so there is no code path that can record a publication that did not happen. See
 [provider-writes.md](provider-writes.md).
 
-`talk` and `unmatchable` together give three matching states, which one nullable FK cannot express:
-no talk and not unmatchable means not yet reviewed, no talk and unmatchable means deliberately
-standalone (a welcome, closing remarks), and a talk set means matched. Without the flag, an organizer
-cannot tell "nobody has looked at this yet" from "there is correctly nothing to link".
+`talk` and `standalone` together give three matching states, which one nullable FK cannot express: no
+talk and not standalone means not yet reviewed, no talk and standalone means deliberately independent
+(a welcome, closing remarks, a keynote recording), and a talk set means matched. Without the flag, an
+organizer cannot tell "nobody has looked at this yet" from "there is correctly nothing to link".
+
+Those states also decide **who reviews**, which is why `review_track` is a derived property rather than
+a column: a matched video goes to its speakers, a standalone one to staff. Storing it would let the two
+drift out of agreement with `talk`.
+
+A standalone video reaches the same `approved` state and the same publication path as a matched one, so
+nothing is stranded unpublishable for lack of a speaker. `may_be_published` therefore requires approval
+plus *either* a talk that is not `do_not_record` or the `standalone` flag. A video still awaiting a
+matching decision cannot publish even when approved, since there is no answer to who approved it or on
+whose behalf.
 
 `title` and `description` mirror what was uploaded, which matters because the videography team writes
 them and M1.3a may rewrite them. Keeping the as-uploaded values makes a normalization dry run

@@ -82,6 +82,7 @@ INSTALLED_APPS = [
     "events",
     "integrations",
     "program",
+    "videos",
 ]
 
 MIDDLEWARE = [

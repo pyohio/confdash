@@ -78,6 +78,19 @@ class FakeVideoHost(BaseAdapter):
     def set_privacy(self, external_id: str, status: PrivacyStatus) -> None:
         self.privacy_changes.append((external_id, status))
 
+    @staticmethod
+    def parse_external_id(value: str) -> str:
+        """Minimal stand-in for a real provider's URL handling.
+
+        Enough to prove that callers delegate here rather than parsing references themselves.
+        """
+        value = value.strip()
+        if not value:
+            raise ValueError("Enter a video id or URL.")
+        if "v=" in value:
+            return value.split("v=", 1)[1].split("&", 1)[0]
+        return value.rstrip("/").rsplit("/", 1)[-1]
+
 
 class IncompleteTalkSource:
     """Missing `fetch_talks`, to prove the registry rejects a half-built adapter."""

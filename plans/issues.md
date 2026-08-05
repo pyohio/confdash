@@ -20,8 +20,10 @@
   `decisions.md`.
 - **Verify confdash.org with Mailgun** (SPF/DKIM DNS records) before M1.4 sends anything. Until
   then mail from that domain will be rejected.
-- **Get the 2026 playlist id** into the event's `video_host` binding config. The playlist is unlisted,
-  so it has to be supplied rather than discovered.
+- **The 2026 playlist does not exist yet**, since the videography team is still processing. Until it
+  does, test reads against the 2025 playlist, which is real data with real formatting variance, and
+  test writes against a scratch playlist holding one throwaway video. Never point a write path at 2025's
+  published videos: a privacy or metadata bug there is publicly visible and overwrites real content.
 - **Confirm YouTube quota costs** against the current table during M1.2. Working figures: reads 1 unit,
   `captions.list` 50, `captions.download` 200, `captions.insert` 400, `captions.update` 450,
   `videos.update` 50, against 10,000 units a day. They imply fetching captions on demand rather than
@@ -30,11 +32,13 @@
   shared deployment. Quota is per Google Cloud project, so orgs on one instance share 10,000 units a
   day, which is about one event's caption ingest. Not needed for PyOhio alone. The audit is free but
   discretionary and slow, so it wants lead time rather than being started when quota runs out.
-- **YouTube OAuth consent screen must not stay in Testing status.** Google expires refresh tokens
-  after 7 days for apps in Testing, so M1.2 would work for a week and then fail. Marking the app
-  Internal avoids both the expiry and a verification review, but needs Google Workspace. Check this
-  before building the adapter, and check whether the channel is a Brand Account, since consenting as
-  the personal account yields credentials that authenticate but see no videos.
+- **Set the YouTube app audience to Internal when creating the Google Cloud credentials.** PyOhio has
+  Workspace, so Internal avoids both the 7-day refresh-token expiry that Testing imposes and the
+  verification review that `youtube.force-ssl` would otherwise need. Nothing exists in Google Cloud
+  yet, so no clock is running. Authorize as a Workspace user with owner or manager access to the
+  **Brand Account** that owns the channel, since the consent flow offers a channel picker and choosing
+  the personal account yields credentials that see the wrong channel. See `decisions.md` for the
+  tenancy consequence: Internal means only PyOhio users can connect to this instance.
 - **No write-back path for rotating credentials.** `ProviderConnection.get_credentials()` reads;
   nothing persists a refresh. OAuth needs it, since access tokens expire hourly and refresh tokens
   can rotate. Adapters must not touch the ORM, so the resolver should inject an
