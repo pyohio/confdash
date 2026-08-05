@@ -31,8 +31,10 @@ just up                  # builds images, starts postgres + app, applies migrati
 The app is at http://localhost:8000, the admin at http://localhost:8000/admin/, and captured
 outbound mail at http://localhost:8026 (mailpit). Nothing sends real email in development.
 
-Host ports are overridable in `.env` (`APP_PORT`, `POSTGRES_PORT`, `MAILPIT_UI_PORT`,
-`MAILPIT_SMTP_PORT`) for running this stack alongside another project's.
+Django runs in the stack rather than on the host, so `just` recipes exec into the `app` container
+(they also work when run from inside it). Only what needs reaching from a browser or a host tool is
+published: `APP_PORT`, `MAILPIT_UI_PORT`, and `POSTGRES_PORT`, all overridable in `.env` for running
+this stack alongside another project's.
 
 Create a login for yourself:
 

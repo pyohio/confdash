@@ -38,7 +38,16 @@ class EventAdmin(ModelAdmin):
 
 @admin.register(OrganizationMembership)
 class OrganizationMembershipAdmin(ModelAdmin):
-    list_display = ["user", "organization", "role"]
+    list_display = ["user", "organization", "role", "scope_summary"]
     list_filter = ["role", "organization"]
     search_fields = ["user__email", "organization__name"]
     autocomplete_fields = ["user", "organization"]
+
+    @admin.display(description="Scopes")
+    def scope_summary(self, obj: OrganizationMembership) -> str:
+        """Spell out what an empty list means, since "no scopes" reads as the opposite of the truth."""
+        if obj.role == OrganizationMembership.Role.OWNER:
+            return "All (owner)"
+        if not obj.scopes:
+            return "All"
+        return ", ".join(sorted(obj.scopes))

@@ -5,9 +5,11 @@ the legacy one, so the scoping rules get explicit coverage.
 """
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 
 from events.models import Event, Organization, OrganizationMembership
+from events.scopes import Scope
 
 pytestmark = pytest.mark.integration
 
@@ -99,3 +101,56 @@ class TestMembership:
 
     def test_organizations_property_excludes_unrelated_orgs(self, organization, other_organization, organizer):
         assert list(organizer.organizations) == [organization]
+
+
+class TestMembershipScopes:
+    """Scope storage and validation. The authorization decision itself lives in `events.authz`."""
+
+    def test_a_new_membership_is_unrestricted(self, organization, user):
+        membership = OrganizationMembership.objects.create(organization=organization, user=user)
+
+        assert membership.scopes == []
+        assert membership.granted_scopes == frozenset(Scope)
+
+    def test_populating_scopes_restricts_to_them(self, organization, user):
+        membership = OrganizationMembership.objects.create(
+            organization=organization, user=user, scopes=[Scope.PROGRAM, Scope.VIDEOS]
+        )
+
+        assert membership.has_scope(Scope.PROGRAM) is True
+        assert membership.has_scope(Scope.SPONSORSHIP) is False
+
+    def test_owners_hold_every_scope_regardless(self, organization, user):
+        membership = OrganizationMembership.objects.create(
+            organization=organization,
+            user=user,
+            role=OrganizationMembership.Role.OWNER,
+            scopes=[Scope.COMMS],
+        )
+
+        assert membership.granted_scopes == frozenset(Scope)
+
+    def test_unknown_stored_scopes_are_ignored_rather_than_raising(self, organization, user):
+        """A scope name left behind by a downgrade should fail closed, not break every request."""
+        membership = OrganizationMembership.objects.create(
+            organization=organization, user=user, scopes=["videos", "telepathy"]
+        )
+
+        assert membership.granted_scopes == frozenset({Scope.VIDEOS})
+
+    def test_clean_rejects_an_unknown_scope(self, organization, user):
+        """A typo would otherwise silently withhold access nobody meant to withhold."""
+        membership = OrganizationMembership(organization=organization, user=user, scopes=["vidoes"])
+
+        with pytest.raises(ValidationError, match="vidoes"):
+            membership.full_clean()
+
+    def test_clean_rejects_a_non_list(self, organization, user):
+        membership = OrganizationMembership(organization=organization, user=user, scopes={"videos": True})
+
+        with pytest.raises(ValidationError, match="must be a list"):
+            membership.full_clean()
+
+    def test_clean_accepts_valid_scopes(self, organization, user):
+        membership = OrganizationMembership(organization=organization, user=user, scopes=["videos", "comms"])
+        membership.full_clean()

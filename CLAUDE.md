@@ -26,8 +26,10 @@ just lint / just format   # ruff (fmt aliases format)
 just check                # lint + format check + tests — run before pushing
 ```
 
-Recipes work from the host or from inside the app container. Postgres must be up for anything
-touching the database: `just up -d postgres`.
+Django runs in the stack, never on the host. Recipes work from the host, where they exec into the
+`app` container, or from inside it. So `just up -d` is a prerequisite for `manage`, `shell`, and the
+`test*` recipes: with only postgres up they fail with `service "app" is not running`. `lint` and
+`format` are the exceptions and run on the host without the stack.
 
 Single test: `just test src/events/tests/test_models.py::TestEvent::test_series_groups_iterations`
 
@@ -45,8 +47,8 @@ real email locally.
 src/
   project/         settings, urls, wsgi/asgi, logging — no application logic
   common/          plain Python and abstract models, NOT a Django app
-  accounts/        User (email USERNAME_FIELD, passwordless), LoginToken
-  events/          Organization, OrganizationMembership, Event
+  accounts/        User (email USERNAME_FIELD, passwordless), LoginToken, auth_method
+  events/          Organization, OrganizationMembership, Event, scopes, authz
   integrations/    ProviderConnection, EventProviderBinding, SyncRun
     providers/     capability protocols (base.py) and per-provider adapters
   templates/       one tree, organized by app; partials/ for HTMX fragments
@@ -63,6 +65,23 @@ in application code, not row-level security.
 
 Use `event.resolve_setting(key, default)` for policy: it checks the event, then the organization,
 then the default. Presence wins over truthiness, so an event can override `True` with `False`.
+
+### Authentication and authorization
+
+Two audiences, two mechanisms, one `User`. Organizers authenticate against their organization's
+identity provider; speakers use emailed magic links. The Django admin is for deployment operators
+only: organizers get a purpose-built interface, so `is_staff` is never derived from a group mapping.
+Full design in `plans/authentication.md`.
+
+- **Every organizer access check goes through `events.authz`**, never an ad-hoc `OrganizationMembership`
+  lookup in a view. It is the single place that requires all three of an allowed auth method, a
+  membership in that organization, and the scope.
+- **Pass a `Scope` at every call site now**, even though every organizer currently holds every scope.
+  Empty `OrganizationMembership.scopes` means unrestricted; owners always hold everything.
+- **Every login path must call `accounts.auth_method.set_auth_method()`**, or that session grants no
+  organizer access. Deliberate: a session with no recorded mechanism fails closed.
+- A magic-link session never grants organizer access, even with a real membership. Otherwise the
+  membership row becomes an unrevoked path around the organization's IdP.
 
 ### The provider abstraction
 
@@ -130,7 +149,10 @@ Do not weaken these without discussion; they are why the credential design looks
 - **`FIELD_ENCRYPTION_KEY` loss is unrecoverable** — every org's credentials go with it.
 - **Magic-link tokens are stored hashed**, single-use, and expiring.
 - **Cross-organization access must be impossible.** `EventProviderBinding.clean()` rejects a
-  connection from another organization; that rule cannot be a DB constraint, so it needs its test.
+  connection from another organization, and `events.authz` filters every membership lookup by
+  organization; neither rule can be a DB constraint, so both need their tests.
+- **Organizer access requires a federated (or operator password) session.** Do not widen the
+  allow-list in `accounts.auth_method` to admit magic links.
 
 ## Testing
 
@@ -169,5 +191,5 @@ Deliberate choices, not oversights:
 - **Black** — ruff format.
 - **Split settings** — one `settings.py`.
 - **Row-level security** — app-level scoping.
-- **A type checker** — not yet, consistent with sibling projects.
+- **A type checker** — not yet. Revisit if the codebase outgrows what tests and review catch.
 - **Provider names in application code** — capabilities and the registry instead.

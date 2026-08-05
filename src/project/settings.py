@@ -47,7 +47,19 @@ FIELD_ENCRYPTION_KEY = required_secret(
     dev_fallback="Zx3n8Zc1zqCk7WpHhVYPfM9tKbLdRsQaJgEuXnT2oYA=",
 )
 
-ALLOWED_HOSTS = ["*"] if DEBUG else env.list("ALLOWED_HOSTS", default=[])
+# The container healthcheck curls http://localhost:8000/healthz/, so loopback names are always
+# accepted. Without them, every probe fails with DisallowedHost as soon as DEBUG is off, and the
+# container reports unhealthy while serving real traffic perfectly well.
+#
+# Safe to add rather than a hole in the protection ALLOWED_HOSTS provides: absolute URLs in outbound
+# mail are built from SITE_BASE_URL, not from the request, so a forged Host header cannot plant a
+# link in a magic-link email. Reaching the app by a loopback name also means already being inside the
+# container's network namespace.
+_LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
+_configured_hosts = env.list("ALLOWED_HOSTS", default=[])
+ALLOWED_HOSTS = (
+    ["*"] if DEBUG else [*_configured_hosts, *(host for host in _LOOPBACK_HOSTS if host not in _configured_hosts)]
+)
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
 SITE_BASE_URL = env.str("SITE_BASE_URL", default="http://localhost:8000")

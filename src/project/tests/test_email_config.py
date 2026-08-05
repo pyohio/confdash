@@ -6,41 +6,11 @@ reimporting the settings module under different environments, since the branchin
 import time.
 """
 
-import importlib
-import os
-from contextlib import contextmanager
-
 import pytest
 
+from project.tests.helpers import settings_env
+
 pytestmark = pytest.mark.unit
-
-
-@contextmanager
-def settings_env(**overrides):
-    """Reimport the settings module with the given environment applied.
-
-    django-environ reads os.environ at import time, so overriding settings after the fact cannot
-    exercise this branching. The module is reloaded again on exit so later tests see the real
-    configuration.
-    """
-    saved = {key: os.environ.get(key) for key in overrides}
-    os.environ.update({k: v for k, v in overrides.items() if v is not None})
-    for key, value in overrides.items():
-        if value is None:
-            os.environ.pop(key, None)
-    try:
-        import project.settings as settings_module
-
-        yield importlib.reload(settings_module)
-    finally:
-        for key, value in saved.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-        import project.settings as settings_module
-
-        importlib.reload(settings_module)
 
 
 def test_no_provider_falls_back_to_email_url():

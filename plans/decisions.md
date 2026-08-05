@@ -81,6 +81,26 @@ UUIDv7 PKs with provider identifiers stored as separate external-reference field
 state attaches to local rows, the app stays usable when a provider is down or an org's trial
 ends, and a provider swap does not orphan review history.
 
+### Django runs in the compose stack, not on the host
+
+There is one way to run the app in development, and it is the container. `just` recipes exec into
+`app`, so nothing changes in daily use, but the host is no longer a supported place to run Django.
+
+The dev stack should therefore publish only what a browser or a host tool needs: the app, mailpit's
+web UI, and postgres for GUI clients. Mailpit's SMTP port is deliberately `expose`d rather than
+published, since `app` is the only sender and it resolves mailpit by service name.
+
+Consequences worth knowing:
+
+- `DATABASE_URL` and `EMAIL_URL` are set in `docker-compose.yml` under `environment`, which takes
+  precedence over `env_file`. A value in a developer's `.env` cannot point the stack at another
+  database or redirect its mail.
+- `just up -d` is a prerequisite for `manage`, `shell`, and the `test*` recipes. With only postgres
+  up they fail with `service "app" is not running`. Only `lint` and `format` run without the stack.
+
+Rejected: keeping a host-usable path in parallel. It meant two configurations to keep working and
+two sets of comments explaining which values applied where, for a path nobody was using.
+
 ### Line length 120
 
 Going-forward standard. Legacy confdash uses 88; no attempt is made to stay consistent with it.
@@ -91,20 +111,43 @@ django-unfold admin is the organizer ops surface for M1. A dedicated organizer U
 only where the admin is demonstrably the wrong tool: video/talk matching is the likely first
 case, since it wants a purpose-built review screen rather than a changelist.
 
-### Authentication
+### Authentication: two audiences, two mechanisms
 
-Two audiences, one mechanism to start:
+Superseded an earlier plan to use magic links for everyone. Organizers and speakers have
+different trust models, so they authenticate differently over one `accounts.User` model:
 
-- Email magic links for everyone who logs in, speakers included. `accounts.User` with email as
-  `USERNAME_FIELD` and no usable password.
-- Django superusers keep working via `createsuperuser` for admin access.
-- Authorization is `OrganizationMembership` with a role, so organizer permissions are
-  org-scoped from day one rather than global `is_staff`.
+- **Organizers** authenticate against their organization's identity provider, so access derives
+  from membership the org already administers (a GitHub org, an OIDC directory). Revoking there
+  revokes here.
+- **Speakers** use emailed magic links. No account setup for a one-time reviewer.
+- **Operators** keep password login via `createsuperuser`, so admin access never depends on
+  outbound email or a reachable IdP.
 
-Deferred: GitHub org/team OAuth, the legacy project's organizer auth. It is additive (another
-way to authenticate an existing `User`) and it is PyOhio-specific, which is exactly the kind
-of assumption this project is trying not to bake in. Revisit during M2, when the legacy
-project's GitHub-authenticated users need a migration path.
+Authorization is `OrganizationMembership` plus granted scopes, org-scoped from day one rather
+than global `is_staff`.
+
+The **Django admin is for deployment operators only**. Organizers, PyOhio's included, get a
+purpose-built organizer interface. The admin has no tenancy of its own, so any staff user would
+otherwise see every organization's rows; restricting it is what makes "cross-organization access
+is impossible" enforceable without a `get_queryset` override on every ModelAdmin.
+
+Rejected: magic links as the single mechanism for both audiences. It leaves
+`OrganizationMembership` as a second, unrevoked path around the IdP, so someone removed from the
+GitHub org keeps organizer access.
+
+No longer deferred: federated organizer login was previously postponed to M2 as PyOhio-specific.
+Supporting any organization's identity provider, rather than only PyOhio's GitHub org, removes that
+objection. Note that **GitHub is OAuth2, not OIDC** (it issues no ID tokens), so a single OIDC
+client does not cover both.
+
+Still open: which library. django-allauth, python-social-auth, and authlib are all live candidates,
+judged mainly on whether they support multiple instances of one provider type (one OIDC issuer per
+organization) and whether client secrets can come from the encrypted store. To be settled by a
+spike when the organizer interface is built, not now. See
+[authentication.md](authentication.md#library-evaluation).
+
+Details, including the scope model and the speaker token refinements, in
+[authentication.md](authentication.md).
 
 ### Email: Anymail, provider configurable, sender per deployment
 

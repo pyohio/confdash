@@ -9,10 +9,12 @@ why the three-level Organization/Series/Edition shape was rejected.
 Scoping is enforced in application code, not row-level security.
 """
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.text import slugify
 
 from common.models import BaseModel
+from events.scopes import Scope
 
 
 class Organization(BaseModel):
@@ -55,6 +57,18 @@ class OrganizationMembership(BaseModel):
     user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="memberships")
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.ORGANIZER)
 
+    # Domain scopes, as a list of Scope values. Empty means unrestricted, which is the current
+    # all-or-nothing behavior and the default.
+    #
+    # Empty-means-all rather than seeding every scope on creation, because a new Scope member must
+    # not silently lock existing organizers out of a new area of the app. Restricting a membership
+    # is the deliberate act; being unrestricted is the default state.
+    scopes = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Domain scopes this membership grants. Leave empty to grant all of them.",
+    )
+
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=["organization", "user"], name="unique_membership_per_org"),
@@ -67,6 +81,37 @@ class OrganizationMembership(BaseModel):
     @property
     def can_manage(self) -> bool:
         return self.role in {self.Role.OWNER, self.Role.ORGANIZER}
+
+    @property
+    def granted_scopes(self) -> frozenset[Scope]:
+        """Scopes this membership actually grants.
+
+        Owners always hold every scope: an owner restricted out of an area could not restore their
+        own access. Unrecognized stored values are ignored rather than raising, so a stale scope
+        name left by a downgrade fails closed instead of breaking every request.
+        """
+        if self.role == self.Role.OWNER or not self.scopes:
+            return frozenset(Scope)
+        valid = Scope.values()
+        return frozenset(Scope(value) for value in self.scopes if value in valid)
+
+    def has_scope(self, scope: Scope | str) -> bool:
+        return scope in self.granted_scopes
+
+    def clean(self):
+        """Reject scope values no `Scope` member matches.
+
+        Typos here are silent authorization bugs: a misspelled scope simply never matches, so the
+        membership quietly lacks access nobody meant to withhold.
+        """
+        super().clean()
+        if not isinstance(self.scopes, list):
+            raise ValidationError({"scopes": "Scopes must be a list."})
+        unknown = sorted(set(self.scopes) - Scope.values())
+        if unknown:
+            raise ValidationError(
+                {"scopes": f"Unknown scopes: {', '.join(unknown)}. Valid scopes: {', '.join(sorted(Scope.values()))}."}
+            )
 
 
 class Event(BaseModel):

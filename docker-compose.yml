@@ -9,8 +9,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-confdash}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-confdash}
     ports:
-      # Exposed so host tools (psql, a GUI client) can connect. Not needed by the app; override
-      # when another project already holds the port.
+      # Published only so host tools (a GUI client, psql) can connect. The app reaches postgres by
+      # service name and never uses this. Override when another project already holds the port.
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       # Postgres 18+ wants a single mount at /var/lib/postgresql, not at .../data: the data
@@ -22,16 +22,24 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      # start_interval probes every second until the first success, so `app`, gated on
+      # service_healthy, starts as soon as postgres is actually ready instead of waiting for the
+      # next interval tick. Steady-state interval is unchanged. Needs Docker Engine 25+.
+      start_period: 10s
+      start_interval: 1s
 
   # Catches all outbound mail locally so speaker magic links can be clicked in development
-  # without sending anything. Web UI at http://localhost:8025.
+  # without sending anything.
   mailpit:
-    image: axllent/mailpit:latest
+    # Pinned so a mailpit release cannot change dev-stack behavior without a deliberate bump.
+    image: axllent/mailpit:v1.20
     ports:
-      # Non-default host ports so this stack can run alongside other projects' mailpit
-      # containers. Container-internal ports stay standard, so EMAIL_URL is unaffected.
+      # Only the web UI is published, since reading mail is the one thing that happens from the
+      # host. Non-default port so this stack can coexist with another project's mailpit.
       - "${MAILPIT_UI_PORT:-8026}:8025"
-      - "${MAILPIT_SMTP_PORT:-1026}:1025"
+    expose:
+      # SMTP stays inside the network: `app` is the only sender, and it resolves mailpit by name.
+      - "1025"
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
@@ -42,10 +50,10 @@ services:
       dockerfile: Dockerfile.dev
     command: python src/manage.py runserver 0.0.0.0:8000
     environment:
+      # Set here rather than read from .env: `environment` wins over `env_file`, so a stray value
+      # in a developer's .env cannot point the stack at another database or redirect its mail.
       DATABASE_URL: postgres://${POSTGRES_USER:-confdash}:${POSTGRES_PASSWORD:-confdash}@postgres:5432/${POSTGRES_DB:-confdash}
       DEBUG: ${DEBUG:-True}
-      # Not interpolated from .env on purpose: inside the stack mail should always go to mailpit,
-      # while .env keeps a host-usable default for running Django directly.
       EMAIL_URL: smtp://mailpit:1025
       # Applied on container start so a fresh checkout comes up with a usable schema.
       RUN_MIGRATIONS: "true"
@@ -67,6 +75,17 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+    healthcheck:
+      # Same probe the production Dockerfile uses, so a break shows up in development first.
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8000/healthz/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      # Generous, because the entrypoint reconciles the venv against uv.lock and runs migrations
+      # before serving. Costs nothing: failures during start_period do not count toward retries,
+      # and start_interval marks the container healthy as soon as a probe passes.
+      start_period: 90s
+      start_interval: 2s
 
 volumes:
   postgres_data:
