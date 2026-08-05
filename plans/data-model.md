@@ -117,7 +117,6 @@ Speaker
   email
   biography       blank
   avatar_url      blank
-  raw             JSONField         # provider payload snapshot
   unique (event, external_id)
 
 Talk
@@ -129,7 +128,7 @@ Talk
   session_type    blank             # "Talk", "Keynote", "Tutorial"
   state           blank             # provider's state, e.g. "confirmed"
   scheduled_start / scheduled_end   nullable
-  raw             JSONField
+  do_not_record   bool              # publication guard; never release regardless of review state
   unique (event, external_id)
 
 TalkSpeaker
@@ -143,8 +142,20 @@ intentional: provider speaker codes are event-scoped, names and bios change betw
 a cross-year identity table adds merge problems for no M1 benefit. `Speaker.user` is the
 cross-year identity when one is needed, resolved by email at first login.
 
-`raw` keeps the provider payload so a sync bug is diagnosable and a later field addition can
-backfill without re-fetching from the provider.
+**No `raw` payload snapshot.** These models hold only the fields the app maps, which reverses the
+original design of keeping the provider payload for diagnosability and backfill. A real Pretalx
+submission ships reviewer scores, review comments, organizer notes, custom-question answers, and an
+`invitation_token` that can claim the submission; none of that belongs on rows a speaker reaches to
+review their own video. Sync is idempotent, so re-running it backfills a newly mapped field, and
+`SyncRun` plus logging cover diagnosis.
+
+Storing CFP review data is not ruled out, it just does not live here. A CFP surface for the program
+committee is a real future feature that wants exactly that data, in its own models behind
+`Scope.PROGRAM`. The sensitivity boundary is a model boundary enforced by scope, not a field filter
+on a row two audiences share.
+
+`do_not_record` is the one field mapped for a reason beyond display: a talk marked it must never be
+published, whatever `review_state` says. See M1.7's guard.
 
 ## Video review
 

@@ -3,7 +3,8 @@
 Importing this package registers every adapter. `IntegrationsConfig.ready()` imports it, so the
 registry is populated before anything asks for an adapter.
 
-Concrete adapters arrive with M1: `pretalx` (talk_source) and `youtube` (video_host). Add the
-module, decorate the class with `@register`, and import it below — no migration, and no change to
-application code.
+Adding a provider: add the module, decorate the class with `@register`, and import it below. No
+migration, and no change to application code. `youtube` (video_host) arrives with M1.2.
 """
+
+from integrations.providers import pretalx  # noqa: F401 — imported for its @register side effect

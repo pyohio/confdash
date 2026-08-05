@@ -2,6 +2,15 @@
 
 > Smaller TODOs and problems that do not warrant their own plan file.
 
+- **Remove references to local checkout paths before launch.** They point at one maintainer's
+  machine and mean nothing to anyone else working in this repo. Currently in `README.md` and
+  `CLAUDE.md` (`../confdash`), `plans/confdash-port.md` (several), `plans/decisions.md`
+  (`~/checkouts/metarepo/tmp/django-patterns/`, `../confdash`), and
+  `plans/provider-integrations.md` (`../static-website/pyohio-cli/...`,
+  `../confdash/src/registration/tito_client.py`). Each is either a reference that should name a
+  public URL, a fact that should be restated in this repo so it survives on its own, or a note that
+  should be dropped once the port lands. Do this when the production system launches, since the
+  legacy paths are still genuinely useful during M2.
 - **Credential key rotation.** `FIELD_ENCRYPTION_KEY` has no rotation path. Needs a
   `rotate_credentials` management command that re-encrypts every `ProviderConnection` under a
   new key, and a documented procedure. Not urgent until a second org is onboarded, but it is a

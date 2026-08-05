@@ -74,6 +74,34 @@ Consequence: `FIELD_ENCRYPTION_KEY` is a required secret, key rotation is a real
 concern, and credentials must never appear in `dumpdata` output or logs. Tracked in
 [provider-integrations.md](provider-integrations.md).
 
+### Map only the fields the app uses; no provider payload snapshots
+
+Superseded the original design, which gave `Talk`, `Speaker`, and `Video` a `raw` JSONField holding
+the provider payload, for diagnosability and for backfilling a later field addition without
+re-fetching.
+
+Reversed once a live `pyohio-2026` response showed what a Pretalx submission actually contains:
+populated `mean_score`, `median_score`, `reviews`, `answers`, `review_code`, and `invitation_token`,
+the last of which is a credential that can claim the submission. Storing that would put a live
+provider credential and confidential CFP review data on rows speakers reach to review their own
+videos.
+
+The neutral records in `providers/base.py` are therefore dataclasses with a fixed field set and no
+catch-all, so the guarantee is structural rather than a filter an adapter could forget. A provider
+adding a field changes nothing until someone deliberately maps it.
+
+Rejected first: an allow-list filter on the payload before storing it. It works, but it mitigates a
+problem there is no reason to have, and it leaves the door open for the next field to be admitted by
+accident.
+
+What the reversal gives up is small: sync is idempotent, so a re-run backfills a newly mapped field,
+and `SyncRun` plus logging cover diagnosis.
+
+This does not rule out storing CFP review data. A CFP surface for the program committee is a real
+future feature that needs it, and it gets its own models gated behind `Scope.PROGRAM`. The
+sensitivity boundary is a model boundary enforced by scope, not a field filter on a row shared by
+organizers and speakers.
+
 ### Synced data is mirrored locally, not read through
 
 `Talk`, `Speaker`, and `Video` are local canonical models populated by sync, keyed on internal

@@ -1,0 +1,28 @@
+{
+  "count": 2,
+  "next": null,
+  "previous": "https://pretalx.com/api/events/pyohio-2026/submissions/?state=confirmed&expand=speakers,submission_type",
+  "results": [
+    {
+      "code": "PAGE02",
+      "title": "Second Page Talk",
+      "description": "",
+      "duration": 30,
+      "state": "confirmed",
+      "do_not_record": false,
+      "slots": [],
+      "submission_type": {"id": 77, "name": "30 Minute Talk", "default_duration": 30},
+      "speakers": [
+        {
+          "code": "SPKP02",
+          "name": "Page Two Speaker",
+          "email": "page2@example.org",
+          "biography": "",
+          "avatar_url": ""
+        }
+      ],
+      "invitation_token": "FIXTURE-token-page2",
+      "mean_score": 1.0
+    }
+  ]
+}

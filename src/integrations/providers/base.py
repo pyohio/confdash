@@ -60,9 +60,25 @@ class ConfigKey:
 
 # --- Records ----------------------------------------------------------------
 #
-# Every record carries `raw`, the provider payload it came from. That lands in the model's `raw`
-# JSONField, which makes a sync bug diagnosable after the fact and lets a later field addition
-# backfill without re-fetching from the provider.
+# These are the whole contract between a provider and the rest of the app: an adapter maps the
+# provider's response onto exactly these fields and discards the rest. Nothing carries a snapshot of
+# the original payload.
+#
+# That is a deliberate reversal of the original design, which stored the provider payload in a `raw`
+# JSONField for diagnosability and for backfilling a later field addition without re-fetching.
+# Neither justified the cost. A real Pretalx submission ships reviewer scores, organizer notes,
+# custom-question answers, and an `invitation_token` that can claim the submission. Sync is
+# idempotent, so a re-run backfills a newly mapped field anyway, and `SyncRun` plus logging cover
+# diagnosis.
+#
+# This is not a decision that CFP review data may never be stored. A CFP surface for the program
+# committee is a real future feature that wants exactly that data. It gets its own models, gated
+# behind `Scope.PROGRAM`, rather than riding along on `Talk` and `Speaker`, which speakers reach to
+# review their own videos. The sensitivity boundary is a model boundary, enforced by scope, not a
+# field filter on a shared row.
+#
+# Consequence, and the point: anything the app needs must be an explicit field here. Adding one is a
+# deliberate act, and a provider adding a field of its own changes nothing until someone maps it.
 
 
 @dataclass(kw_only=True)
@@ -72,7 +88,6 @@ class SpeakerRecord:
     email: str = ""
     biography: str = ""
     avatar_url: str = ""
-    raw: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(kw_only=True)
@@ -87,7 +102,9 @@ class TalkRecord:
     scheduled_start: str | None = None
     scheduled_end: str | None = None
     speaker_external_ids: list[str] = field(default_factory=list)
-    raw: dict[str, Any] = field(default_factory=dict)
+    # Speaker or organizer opt-out of recording. A publication guard: a talk marked this way must
+    # never be released, whatever the review state says.
+    do_not_record: bool = False
 
 
 @dataclass(kw_only=True)
@@ -98,7 +115,6 @@ class VideoRecord:
     privacy_status: PrivacyStatus = PrivacyStatus.PRIVATE
     duration_seconds: int | None = None
     published_at: str | None = None
-    raw: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(kw_only=True)
@@ -107,7 +123,6 @@ class CaptionRecord:
     content: str
     external_id: str = ""
     is_draft: bool = False
-    raw: dict[str, Any] = field(default_factory=dict)
 
 
 # --- Capability protocols ---------------------------------------------------
