@@ -2,6 +2,10 @@
 
 > Smaller TODOs and problems that do not warrant their own plan file.
 
+- **Collapse migrations before the first live deployment.** Early development migrates forward and
+  accumulates small migrations rather than rewriting them, so a squash is wanted once the models settle.
+  Do it exactly once, before anything real has been deployed, since after that a collapse means
+  reconciling deployed databases against a rewritten history.
 - **Remove references to local checkout paths before launch.** They point at one maintainer's
   machine and mean nothing to anyone else working in this repo. Currently in `README.md` and
   `CLAUDE.md` (`../confdash`), `plans/confdash-port.md` (several), `plans/decisions.md`

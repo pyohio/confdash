@@ -77,9 +77,24 @@ confirmation rather than human data entry.
   `parse_external_id`, since recognizing a watch URL is provider knowledge. With no host configured a
   bare id is accepted but a URL is refused: `external_id` is unique per event, so storing an
   uninterpreted URL would silently duplicate the video the first time a real sync reported it.
-- Suggestion pass: normalized fuzzy match of video title against talk titles, producing ranked
-  candidates with scores. Deterministic and testable, no ML. Normalization has to survive
-  punctuation, case, separator, and whitespace differences, since those are the expected variance.
+- Suggestion pass: **built** in `videos/matching.py`. Normalized fuzzy match producing ranked scored
+  candidates. Deterministic, stdlib `difflib` only, no ML: there is nothing a model would learn that
+  normalization does not already handle, and an unexplainable ranking is worse than a slightly weaker
+  one when a human confirms every match anyway.
+
+  Measured against the real 2025 corpus, 13 uploaded files against 39 confirmed talks: **10 of 10 real
+  talks matched at 1.00 with a clear margin, 3 non-talks correctly produced no suggestion, no false
+  matches.** The three misses are the welcome, the closing remarks, and a keynote recording, which is
+  exactly the standalone case.
+
+  Two things that tuning against real data taught, rather than intuition:
+
+  - Comparing the **separator-collapsed** forms as well as the space-separated ones. Uploaders drop a
+    hyphen (`Code-Scape` becoming `CodeScape`) as readily as they replace it, and treating every hyphen
+    as a space scored the corpus's only real mismatch at 0.89 instead of 1.00.
+  - **High confidence alone is not enough to auto-accept.** Two talks in a series with near-identical
+    titles can both clear the threshold, so `is_unambiguous` also requires a margin over the runner-up.
+    Without it, bulk-accept would make a coin toss look like a decision.
 - Organizer review screen: unmatched videos with suggested talks, confirm or override,
   server-rendered with HTMX. A side-by-side confirm queue is the whole job, and it is the first
   place the admin is the wrong tool.

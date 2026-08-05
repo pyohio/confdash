@@ -136,6 +136,11 @@ wipe local rows and their review state.
   `DEBUG=True`.
 - Line length 120. Ruff only — no Black, no pre-commit.
 - Migrations are excluded from ruff. Review generated migrations before committing.
+- **Migrate forward. Do not rewrite or regenerate an existing migration.** While the models are still
+  settling, a model change gets a new migration, however small. Regenerating one that has already been
+  applied leaves the database describing something no migration accounts for, which then has to be
+  reconciled by hand. The accumulated migrations get collapsed once before the first live deployment,
+  which is the right moment for it and the only one.
 
 ## Security invariants
 
