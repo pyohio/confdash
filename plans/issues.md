@@ -56,9 +56,20 @@
   (fail closed) but poor UX, and there is no organizer login URL to redirect to yet. Revisit when
   organizer SSO is built: anonymous should redirect, an authenticated-but-unauthorized session should
   still get 403, since a redirect there would loop.
-- **Wire the organizer URL include into `project/urls.py`** with the first real organizer view. The
-  shape is settled (`/o/<organization_slug>/<event_slug>/...`) and `events.decorators.organizer_view`
-  is built and tested, but nothing is routed yet.
+- **No login path sets an `AuthMethod`, so no organizer URL is reachable by a real browser session.**
+  The confirm queue works and is covered by tests through the real URL and template, but exercising it
+  by hand needs a session minted by hand. This is the single thing blocking anyone from actually using
+  the screen, and it is what organizer SSO fixes. Until then, a dev-only login shim is the alternative
+  if hand-driving the UI is wanted sooner.
+- **The Tailwind Play CDN cannot take a subresource-integrity hash**, because it is unversioned and
+  compiles classes in the browser, so its bytes change without notice. Every other CDN asset in
+  `base.html` is pinned with a `sha384` hash. The Play CDN is also explicitly not meant for production.
+  Decide before launch: pin a compiled stylesheet, accept a small build step (against the "no JS build"
+  convention), or accept the risk knowingly.
+- **The queue screen has not been checked in a real browser.** The layout was verified structurally
+  (computed styles, DaisyUI and Tailwind applied, htmx and Alpine loaded, no horizontal overflow) by
+  serving the rendered HTML, but no screenshot was captured and no HTMX swap has been clicked by hand.
+  Worth doing once a login path exists.
 - **Add an `update_metadata` write operation** when M1.3a gives the `video_host` protocol a method for
   it. Left out deliberately: an operation with no handler is a row that fails at drain time. The plan
   is to combine it with the privacy change into one `videos.update` call, since they cost 50 units

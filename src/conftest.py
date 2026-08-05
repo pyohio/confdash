@@ -51,6 +51,32 @@ def organizer(organization, user) -> User:
     return user
 
 
+@pytest.fixture
+def as_federated():
+    """Log a test client in with a recorded authentication mechanism.
+
+    `force_login` alone is not enough to reach an organizer view: `accounts.auth_method` requires the
+    session to say *how* it authenticated, and a session with nothing recorded fails closed. That is the
+    invariant, so tests have to satisfy it the same way a real login path does.
+    """
+    from accounts.auth_method import SESSION_KEY, AuthMethod
+
+    def login(client, user, *, method: AuthMethod = AuthMethod.FEDERATED):
+        client.force_login(user)
+        session = client.session
+        session[SESSION_KEY] = str(method)
+        session.save()
+        return client
+
+    return login
+
+
+@pytest.fixture
+def organizer_client(client, organizer, as_federated):
+    """A client authenticated as an unrestricted organizer of `organization`."""
+    return as_federated(client, organizer)
+
+
 # --- Providers --------------------------------------------------------------
 #
 # Shared rather than scoped to `integrations/tests/` because sync services live in the apps that own

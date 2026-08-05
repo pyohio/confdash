@@ -1,0 +1,29 @@
+{#
+  A video whose matching is decided, either way. Rendered both in the "Settled" list and as the swap
+  that replaces a queue row, which is why it carries the same id the queue row did.
+#}
+<div class="card bg-base-100 shadow-sm" id="video-{{ video.pk }}">
+  <div class="card-body flex-row flex-wrap items-center gap-3 p-3">
+
+    <div class="flex-1 min-w-0">
+      <div class="text-sm font-medium break-words">{{ video.title|default:video.external_id }}</div>
+      {% if video.talk %}
+        <div class="text-xs opacity-70 mt-0.5 break-words">→ {{ video.talk.title }}</div>
+      {% else %}
+        <div class="text-xs opacity-70 mt-0.5">No talk — staff review</div>
+      {% endif %}
+    </div>
+
+    <span class="badge {% if video.talk %}badge-success{% else %}badge-neutral{% endif %} badge-outline whitespace-nowrap">
+      {% if video.review_track == "speaker" %}Speaker review{% else %}Staff review{% endif %}
+    </span>
+
+    <button class="btn btn-xs btn-ghost"
+            hx-post="{% url 'videos:undo_match' event.organization.slug event.slug video.pk %}"
+            hx-target="#video-{{ video.pk }}"
+            hx-swap="outerHTML">
+      Undo
+    </button>
+
+  </div>
+</div>

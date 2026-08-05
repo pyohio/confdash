@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Match videos — {{ event.name }}{% endblock %}
+
+{% block content %}
+  <div class="flex flex-wrap items-end justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Match videos to talks</h1>
+      <p class="text-sm opacity-70 mt-1">
+        {{ rows|length }} awaiting a decision, scored against {{ talk_count }} talk{{ talk_count|pluralize }}.
+      </p>
+    </div>
+
+    {% if auto_acceptable_count %}
+      {# A plain form, not an hx-post: this changes most of the page and a redirect stops a refresh replaying it. #}
+      <form method="post" action="{% url 'videos:accept_suggested' event.organization.slug event.slug %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary">
+          Accept {{ auto_acceptable_count }} clear match{{ auto_acceptable_count|pluralize:"es" }}
+        </button>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if rows %}
+    <div class="space-y-3" id="queue">
+      {% for row in rows %}
+        {% include "videos/partials/queue_row.html" %}
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="alert alert-success">
+      <span>Every video is either matched to a talk or marked standalone. Nothing left to decide.</span>
+    </div>
+  {% endif %}
+
+  {% if settled %}
+    <h2 class="text-lg font-semibold mt-10 mb-3">Settled</h2>
+    <div class="space-y-2">
+      {% for video in settled %}
+        {% include "videos/partials/settled_row.html" %}
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

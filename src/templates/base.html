@@ -1,0 +1,59 @@
+{% load static %}
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ event.name|default:"confdash" }}{% endblock %}</title>
+
+    {#
+      No JS build, deliberately: everything comes from a CDN at a pinned version with a subresource
+      integrity hash, so a compromised or swapped CDN file fails to load rather than executing.
+
+      Tailwind is the exception and has no hash, because the Play CDN is deliberately unversioned and
+      compiles classes in the browser, so its bytes change without notice and any hash would break the
+      page on their next release. It is also not intended for production. See plans/issues.md.
+    #}
+    <link rel="stylesheet" type="text/css"
+          href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css"
+          integrity="sha384-iMbeRReqpIEp0z+cPe0FZxnbV/GbGyGjDfou8Rjcr6KSJIptc245QXNVjLMtu5TR"
+          crossorigin="anonymous">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"
+            integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+            crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"
+            integrity="sha384-X9kJyAubVxnP0hcA+AMMs21U445qsnqhnUF8EBlEpP3a42Kh/JwWjlv2ZcvGfphb"
+            crossorigin="anonymous"></script>
+  </head>
+
+  {#
+    The CSRF token is set once here rather than on every form and every hx-post. Django rejects an
+    unsafe request without it, and a queue of per-row buttons is exactly where one gets forgotten.
+  #}
+  <body class="min-h-screen bg-base-200" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    <div class="navbar bg-base-100 shadow-sm">
+      <div class="flex-1 px-4 gap-3">
+        <span class="text-lg font-semibold">{{ event.organization.name|default:"confdash" }}</span>
+        {% if event %}<span class="badge badge-neutral">{{ event.name }}</span>{% endif %}
+      </div>
+      <div class="flex-none px-4 text-sm opacity-70">
+        {% if request.user.is_authenticated %}{{ request.user.email }}{% endif %}
+      </div>
+    </div>
+
+    {% if messages %}
+      <div class="mx-auto max-w-6xl px-4 pt-4 space-y-2">
+        {% for message in messages %}
+          <div class="alert {% if message.tags == 'error' %}alert-error{% elif message.tags == 'warning' %}alert-warning{% else %}alert-success{% endif %}">
+            <span>{{ message }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <main class="mx-auto max-w-6xl p-4">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

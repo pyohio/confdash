@@ -95,10 +95,13 @@ confirmation rather than human data entry.
   - **High confidence alone is not enough to auto-accept.** Two talks in a series with near-identical
     titles can both clear the threshold, so `is_unambiguous` also requires a margin over the runner-up.
     Without it, bulk-accept would make a coin toss look like a decision.
-- Organizer review screen: unmatched videos with suggested talks, confirm or override,
-  server-rendered with HTMX. A side-by-side confirm queue is the whole job, and it is the first
-  place the admin is the wrong tool.
-- Bulk-accept high-confidence matches, with an undo.
+- Organizer review screen: **built**, at `/o/<org>/<event>/videos/`. Unmatched videos with ranked
+  suggestions, each row its own HTMX swap target so confirming one leaves the rest of the queue and the
+  scroll position alone. The score is shown, because an organizer wondering why a suggestion appeared
+  deserves an answer.
+- Bulk-accept high-confidence matches, with an undo: **built**. Accepts only the unambiguous ones and
+  deliberately leaves near-ties in the queue. Undo works on either outcome and clears the audit stamps,
+  since leaving them would claim someone decided the state the video is now in.
 
 Expect videos that match no talk at all: the 2025 playlist included a welcome, closing remarks, and
 a keynote recording alongside the talks. Marking a video **standalone** is a normal outcome, not an

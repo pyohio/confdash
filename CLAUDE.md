@@ -58,9 +58,11 @@ src/
   common/          plain Python and abstract models, NOT a Django app
   accounts/        User (email USERNAME_FIELD, passwordless), LoginToken, auth_method
   events/          Organization, OrganizationMembership, Event, scopes, authz
-  integrations/    ProviderConnection, EventProviderBinding, SyncRun
+  integrations/    ProviderConnection, EventProviderBinding, SyncRun, ProviderWrite, outbox
     providers/     capability protocols (base.py) and per-provider adapters
-  templates/       one tree, organized by app; partials/ for HTMX fragments
+  program/         Talk, Speaker, TalkSpeaker, and the talk-source sync
+  videos/          Video, matching, review authz, and the organizer confirm queue
+  templates/       one tree: base.html, then <app>/ and <app>/partials/ for HTMX fragments
 ```
 
 `common/` is intentionally **not** in `INSTALLED_APPS`: Django app → its own app directory, plain
@@ -91,6 +93,14 @@ Full design in `plans/authentication.md`.
   organizer access. Deliberate: a session with no recorded mechanism fails closed.
 - A magic-link session never grants organizer access, even with a real membership. Otherwise the
   membership row becomes an unrevoked path around the organization's IdP.
+
+**Organizer URLs are path-scoped: `/o/<organization_slug>/<event_slug>/...`**, so the tenant is resolved
+and authorized before a view body runs. Use `@organizer_view(Scope.X)` from `events.decorators`; it
+consumes both slugs and hands the view an `Event`. Never resolve an event by its slug alone — `2026`
+exists in every organization. `require_scope` / `has_scope` cover the in-view and in-template cases.
+
+Nothing sets `AuthMethod.FEDERATED` yet, so **no organizer URL is reachable by a real browser session**
+until organizer SSO lands. Tests mint the session via the `as_federated` fixture.
 
 ### The provider abstraction
 
@@ -159,6 +169,12 @@ design in `plans/provider-writes.md`.
 - `django-typer` for management commands.
 - structlog with keyword events: `logger.info("program.synced", event_slug=..., talks=12)`.
 - Server-rendered templates with HTMX; minimal Alpine.js; DaisyUI + Tailwind via CDN, no JS build.
+  CDN assets are pinned and carry a `sha384` integrity hash; compute a real one rather than inventing
+  it, since a wrong hash silently blocks the asset. Tailwind's Play CDN is the one exception and cannot
+  take a hash: see `plans/issues.md`.
+- HTMX mutations are POST-only and return the replaced fragment, not a whole page. Decorate views
+  `@organizer_view(...)` **outermost** and `@require_POST` inside it, so an outsider gets 403 rather
+  than the 405 that would confirm the endpoint exists.
 - Single `settings.py`. Environment differences via env vars and `if DEBUG`, never split settings.
 - Secrets required in production hard-fail when `DEBUG=False`; insecure fallbacks only under
   `DEBUG=True`.

@@ -1,0 +1,61 @@
+{#
+  One undecided video and its ranked suggestions.
+
+  Each row is its own swap target, so confirming one leaves the rest of the queue untouched and the
+  organizer's scroll position where it was.
+#}
+<div class="card bg-base-100 shadow-sm" id="video-{{ row.video.pk }}">
+  <div class="card-body gap-4 p-4">
+
+    <div class="flex flex-wrap items-start justify-between gap-2">
+      <div class="min-w-0">
+        <div class="font-medium break-words">{{ row.video.title|default:row.video.external_id }}</div>
+        <div class="text-xs opacity-60 mt-0.5 font-mono">{{ row.video.external_id }}</div>
+      </div>
+      {% if row.is_unambiguous %}
+        <span class="badge badge-success badge-outline whitespace-nowrap">Clear match</span>
+      {% elif row.suggestions %}
+        <span class="badge badge-warning badge-outline whitespace-nowrap">Needs a look</span>
+      {% else %}
+        <span class="badge badge-ghost whitespace-nowrap">No candidate</span>
+      {% endif %}
+    </div>
+
+    {% if row.suggestions %}
+      <div class="space-y-1">
+        {% for suggestion in row.suggestions %}
+          <form method="post"
+                hx-post="{% url 'videos:confirm_match' event.organization.slug event.slug row.video.pk %}"
+                hx-target="#video-{{ row.video.pk }}"
+                hx-swap="outerHTML"
+                class="flex items-center gap-3">
+            {% csrf_token %}
+            <input type="hidden" name="talk" value="{{ suggestion.talk.pk }}">
+            <button type="submit"
+                    class="btn btn-sm {% if forloop.first and row.is_unambiguous %}btn-primary{% else %}btn-outline{% endif %}">
+              Match
+            </button>
+            <span class="flex-1 min-w-0 text-sm break-words">{{ suggestion.talk.title }}</span>
+            {# The score is shown because an organizer wondering why a suggestion appeared deserves an answer. #}
+            <span class="text-xs opacity-50 font-mono whitespace-nowrap">{{ suggestion.score }}</span>
+          </form>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-sm opacity-70">
+        No talk resembles this title. A welcome, closing remarks, or a keynote recording belongs as
+        standalone.
+      </p>
+    {% endif %}
+
+    <div class="card-actions justify-end">
+      <button class="btn btn-sm btn-ghost"
+              hx-post="{% url 'videos:mark_standalone' event.organization.slug event.slug row.video.pk %}"
+              hx-target="#video-{{ row.video.pk }}"
+              hx-swap="outerHTML">
+        No talk — staff review
+      </button>
+    </div>
+
+  </div>
+</div>
