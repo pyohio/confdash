@@ -3,10 +3,9 @@
 from typing import Annotated
 
 import typer
-from django.core.management.base import CommandError
 from django_typer.management import Typer
 
-from events.models import Event
+from events.cli import resolve_event
 from program.services import sync_program
 
 app = Typer(help=__doc__)
@@ -20,7 +19,7 @@ def main(
         typer.Option("--organization", help="Organization slug. Required only if the event slug is ambiguous."),
     ] = None,
 ) -> None:
-    target = _resolve_event(event, organization)
+    target = resolve_event(event, organization)
 
     result = sync_program(target)
 
@@ -37,25 +36,3 @@ def main(
         )
         if result.absent_talk_ids:
             typer.echo(f"    talk ids: {', '.join(result.absent_talk_ids)}")
-
-
-def _resolve_event(slug: str, organization_slug: str | None) -> Event:
-    """Find one event by slug.
-
-    Event slugs are unique per organization, not globally, so '2026' can be ambiguous on a
-    multi-tenant instance. Fail with the choices rather than picking one.
-    """
-    events = Event.objects.filter(slug=slug).select_related("organization")
-    if organization_slug:
-        events = events.filter(organization__slug=organization_slug)
-
-    matches = list(events)
-    if not matches:
-        raise CommandError(
-            f"No event with slug {slug!r}." + (f" in organization {organization_slug!r}." if organization_slug else "")
-        )
-    if len(matches) > 1:
-        options = ", ".join(f"--organization {e.organization.slug}" for e in matches)
-        raise CommandError(f"Several organizations have an event named {slug!r}. Disambiguate with one of: {options}")
-
-    return matches[0]

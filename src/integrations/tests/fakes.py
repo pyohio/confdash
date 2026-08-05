@@ -8,6 +8,8 @@ These are registered on demand by the `fake_providers` fixture rather than at im
 they never leak into the registry a running application sees.
 """
 
+from dataclasses import replace
+
 from integrations.providers.base import (
     BaseAdapter,
     Capability,
@@ -57,10 +59,17 @@ class FakeVideoHost(BaseAdapter):
     videos: list[VideoRecord] = []
     captions: dict[str, list[CaptionRecord]] = {}
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.uploaded_captions: list[tuple[str, CaptionRecord]] = []
-        self.privacy_changes: list[tuple[str, PrivacyStatus]] = []
+    # Failures a test can ask for, since the outbox's whole job is handling them.
+    set_privacy_error: Exception | None = None
+    upload_captions_error: Exception | None = None
+    # When true, `set_privacy` records the call but does not change what `fetch_video` reports, standing
+    # in for a provider that accepted a write and has not applied it.
+    ignore_privacy_writes: bool = False
+
+    # Recorded on the class, not the instance, because the outbox resolves its own adapter: a test has
+    # no reference to the object that performed the write, only to what the write did.
+    uploaded_captions: list[tuple[str, CaptionRecord]] = []
+    privacy_changes: list[tuple[str, PrivacyStatus]] = []
 
     def check(self) -> None:
         return None
@@ -68,15 +77,32 @@ class FakeVideoHost(BaseAdapter):
     def list_videos(self) -> list[VideoRecord]:
         return list(self.videos)
 
+    def fetch_video(self, external_id: str) -> VideoRecord | None:
+        for video in self.videos:
+            if video.external_id == external_id:
+                return video
+        return None
+
     def fetch_captions(self, external_id: str) -> list[CaptionRecord]:
         return list(self.captions.get(external_id, []))
 
     def upload_captions(self, external_id: str, track: CaptionRecord) -> str:
+        if self.upload_captions_error:
+            raise self.upload_captions_error
         self.uploaded_captions.append((external_id, track))
         return f"fake-caption-{external_id}-{track.language}"
 
     def set_privacy(self, external_id: str, status: PrivacyStatus) -> None:
+        if self.set_privacy_error:
+            raise self.set_privacy_error
         self.privacy_changes.append((external_id, status))
+        if self.ignore_privacy_writes:
+            return
+        # Apply it, so a handler that confirms by reading back sees what it asked for.
+        for index, video in enumerate(self.videos):
+            if video.external_id == external_id:
+                self.videos[index] = replace(video, privacy_status=status)
+                return
 
     @staticmethod
     def parse_external_id(value: str) -> str:

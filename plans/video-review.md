@@ -209,6 +209,12 @@ not responded.
 - Audit: who released what, when. The `ProviderWrite` row already carries `requested_by` and
   `confirmed_at`, so this is a view over existing data rather than a second log.
 
+The write machinery this depends on is built ahead of schedule, because retrofitting "record intent
+before acting" means revisiting every call site that already acted. In place: the queue, the
+`set_privacy` and `upload_captions` handlers with their guards, admin actions that queue publication and
+retraction, and `just manage drain_provider_writes`. What M1.7 adds is the release *policy* and the
+bulk path, not the mechanism.
+
 Done when both policies work end to end against YouTube, both guards are covered by tests, and a
 publish interrupted by quota exhaustion resumes on the next drain without anything being
 double-published or silently skipped.

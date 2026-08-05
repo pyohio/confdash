@@ -3,12 +3,17 @@
 This is the floor for matching: paste a video reference against a talk and it is linked, with no
 YouTube integration required. The HTMX confirm queue in M1.3 makes that faster for a whole playlist;
 it does not replace it, because manual entry is what still works when a provider is misconfigured.
+
+Publication is queued here, never performed. `publication_state` and `privacy_status` are read-only
+because they record what the provider confirmed; see plans/provider-writes.md.
 """
 
 from django import forms
 from django.contrib import admin, messages
 from unfold.admin import ModelAdmin, TabularInline
 
+from integrations.providers.base import PrivacyStatus
+from videos import writes
 from videos.models import Video
 from videos.services import normalize_reference
 
@@ -63,8 +68,18 @@ class VideoAdmin(ModelAdmin):
     list_filter = ["event", "review_state", "approval_source", "publication_state", "privacy_status", "standalone"]
     search_fields = ["title", "external_id", "talk__title"]
     autocomplete_fields = ["event", "talk", "matched_by", "approved_by"]
-    readonly_fields = ["created_at", "updated_at", "matched_at", "approved_at", "approval_source"]
-    actions = ["action_mark_standalone", "action_unmatch"]
+    readonly_fields = [
+        "created_at",
+        "updated_at",
+        "matched_at",
+        "approved_at",
+        "approval_source",
+        # Confirmed provider state, so not something to type in. Sync reports it and the write queue
+        # updates it once the provider agrees.
+        "privacy_status",
+        "publication_state",
+    ]
+    actions = ["action_mark_standalone", "action_unmatch", "action_queue_publication", "action_queue_retraction"]
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("event", "talk")
@@ -110,3 +125,40 @@ class VideoAdmin(ModelAdmin):
         for video in queryset:
             unmatch(video)
         self.message_user(request, f"Returned {queryset.count()} video(s) to the queue.", messages.SUCCESS)
+
+    @admin.action(description="Queue for publication")
+    def action_queue_publication(self, request, queryset):
+        """Record the intent to publish. Nothing reaches the provider until a drain runs.
+
+        Deliberately not a publish button. `publication_state` is read-only in this admin because it
+        describes what the provider confirmed, and an admin that could set it directly would be the one
+        code path capable of producing the divergence the queue exists to prevent.
+        """
+        queued, refused = 0, []
+        for video in queryset:
+            try:
+                writes.request_publication(video, user=request.user)
+            except ValueError as exc:
+                refused.append(f"{video}: {exc}")
+            else:
+                queued += 1
+
+        if queued:
+            self.message_user(
+                request,
+                f"Queued {queued} video(s). Run `just manage drain_provider_writes` to send them.",
+                messages.SUCCESS,
+            )
+        for message in refused:
+            self.message_user(request, message, messages.WARNING)
+
+    @admin.action(description="Queue to make unlisted again")
+    def action_queue_retraction(self, request, queryset):
+        """Pull a video back. Never gated on review state: a retraction must always be possible."""
+        for video in queryset:
+            writes.request_privacy(video, PrivacyStatus.UNLISTED, user=request.user)
+        self.message_user(
+            request,
+            f"Queued {queryset.count()} video(s) to become unlisted.",
+            messages.SUCCESS,
+        )

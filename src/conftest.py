@@ -123,6 +123,40 @@ def video_binding(event, video_connection) -> EventProviderBinding:
 
 
 @pytest.fixture
+def fake_videos(fake_providers):
+    """Set what `FakeVideoHost` reports, restoring the class attributes afterwards.
+
+    Separate from `fake_talks` because the video host's list is *mutated* by `set_privacy`, so a test
+    that installed videos and did not restore would hand the next one a playlist it did not ask for.
+    """
+    attributes = (
+        "videos",
+        "captions",
+        "uploaded_captions",
+        "privacy_changes",
+        "set_privacy_error",
+        "upload_captions_error",
+        "ignore_privacy_writes",
+    )
+    original = {name: getattr(FakeVideoHost, name) for name in attributes}
+
+    def install(*, videos=(), captions=None, set_privacy_error=None, upload_captions_error=None, ignore_writes=False):
+        FakeVideoHost.videos = list(videos)
+        FakeVideoHost.captions = dict(captions or {})
+        FakeVideoHost.uploaded_captions = []
+        FakeVideoHost.privacy_changes = []
+        FakeVideoHost.set_privacy_error = set_privacy_error
+        FakeVideoHost.upload_captions_error = upload_captions_error
+        FakeVideoHost.ignore_privacy_writes = ignore_writes
+
+    try:
+        yield install
+    finally:
+        for name, value in original.items():
+            setattr(FakeVideoHost, name, value)
+
+
+@pytest.fixture
 def fake_talks(fake_providers):
     """Set the records `FakeTalkSource` returns, restoring the class attributes afterwards.
 

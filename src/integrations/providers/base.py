@@ -10,8 +10,35 @@ and an adapter is testable with recorded fixtures and no database.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
+
+
+class ProviderError(Exception):
+    """Base for the failures adapters are expected to raise, as opposed to bugs."""
+
+
+class QuotaExceeded(ProviderError):
+    """The provider refused the call because the caller is out of allowance.
+
+    Carries `retry_after` because the right wait is provider knowledge, not queue knowledge: YouTube's
+    allowance returns at midnight Pacific whatever the backoff curve says, and a generic exponential
+    retry burns units rediscovering the wall. The adapter that knows the reset schedule sets it; the
+    outbox defers until then rather than guessing.
+    """
+
+    def __init__(self, message: str = "", *, retry_after: datetime | None = None):
+        super().__init__(message or "Provider quota exceeded.")
+        self.retry_after = retry_after
+
+
+class WriteRejected(ProviderError):
+    """The provider refused the write itself, and retrying it unchanged will not help.
+
+    Distinct from a transient failure: a malformed caption track or a video the credentials cannot
+    reach is a permanent outcome, and a queue that retries it wastes allowance and hides the problem.
+    """
 
 
 class Capability(StrEnum):
@@ -174,6 +201,15 @@ class VideoHost(ProviderAdapter, Protocol):
     """
 
     def list_videos(self) -> list[VideoRecord]: ...
+
+    def fetch_video(self, external_id: str) -> VideoRecord | None:
+        """One video by id, or None if the provider does not have it.
+
+        Separate from `list_videos` because confirming a write should not cost a playlist scan. A
+        privacy change is confirmed by reading the video back, and that read has to be cheap enough
+        to do after every one.
+        """
+        ...
 
     def fetch_captions(self, external_id: str) -> list[CaptionRecord]: ...
 

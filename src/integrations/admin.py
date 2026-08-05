@@ -1,17 +1,21 @@
-"""Admin for provider connections.
+"""Admin for provider connections, bindings, and the traffic they carry.
 
 The organizer-facing job here is credential entry, which needs care: credentials must be
 writable but never readable back. The form takes a write-only JSON payload and shows which keys
 are currently stored, not their values.
+
+`SyncRun` and `ProviderWrite` are operational records, so both are read-only: they are written by the
+sync services and the outbox, and a hand-edited row would describe something that never happened.
 """
 
 import json
 
 from django import forms
 from django.contrib import admin, messages
+from django.utils import timezone
 from unfold.admin import ModelAdmin, TabularInline
 
-from integrations.models import EventProviderBinding, ProviderConnection, SyncRun
+from integrations.models import EventProviderBinding, ProviderConnection, ProviderWrite, SyncRun
 from integrations.resolver import verify_connection
 
 
@@ -149,3 +153,61 @@ class SyncRunAdmin(ModelAdmin):
     def has_add_permission(self, request) -> bool:
         # Sync runs are written by sync services, never by hand.
         return False
+
+
+@admin.register(ProviderWrite)
+class ProviderWriteAdmin(ModelAdmin):
+    """The write queue, read-only apart from being able to retry a failure.
+
+    Read-only because editing `desired` by hand would let the admin assert an intent no local change
+    motivated, which is the one thing this table exists to make impossible. Retrying is the exception:
+    a write that failed for an operational reason should not need a new approval to try again.
+    """
+
+    list_display = ["event", "operation", "target_external_id", "state", "attempts", "not_before", "confirmed_at"]
+    list_filter = ["state", "capability", "operation", "event"]
+    search_fields = ["target_external_id", "event__name"]
+    readonly_fields = [
+        "event",
+        "capability",
+        "operation",
+        "target_external_id",
+        "desired",
+        "result",
+        "state",
+        "attempts",
+        "last_error",
+        "not_before",
+        "confirmed_at",
+        "requested_by",
+        "created_at",
+        "updated_at",
+    ]
+    actions = ["retry"]
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    @admin.action(description="Retry failed writes")
+    def retry(self, request, queryset):
+        """Return failed writes to the queue with their attempt count cleared.
+
+        Only failures: re-queueing a confirmed write would ask the provider to redo something it has
+        already done, and a superseded one has been replaced by fresher intent on purpose.
+        """
+        eligible = queryset.filter(state=ProviderWrite.State.FAILED)
+        count = eligible.update(
+            state=ProviderWrite.State.PENDING,
+            attempts=0,
+            not_before=None,
+            updated_at=timezone.now(),
+        )
+        skipped = queryset.count() - count
+
+        self.message_user(request, f"{count} write(s) queued for retry.", messages.SUCCESS)
+        if skipped:
+            self.message_user(
+                request,
+                f"{skipped} skipped: only failed writes can be retried.",
+                messages.WARNING,
+            )

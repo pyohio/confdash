@@ -27,6 +27,14 @@ just lint / just format   # ruff (fmt aliases format)
 just check                # lint + format check + tests — run before pushing
 ```
 
+Project management commands:
+
+```bash
+just manage sync_program --event 2026           # pull talks and speakers from the talk source
+just manage drain_provider_writes --dry-run     # provider writes that are due, spending no quota
+just manage drain_provider_writes               # execute them
+```
+
 Django runs in the stack, never on the host. Recipes work from the host, where they exec into the
 `app` container, or from inside it. So `just up -d` is a prerequisite for `manage`, `shell`, and the
 `test*` recipes: with only postgres up they fail with `service "app" is not running`. `lint` and
@@ -115,13 +123,32 @@ separate `external_id` fields — never as primary keys. Syncs are **idempotent 
 `(event, external_id)`, and never delete on absence**: a provider returning a short list must not
 wipe local rows and their review state.
 
+### Writes to a provider go through the outbox
+
+Reads may call an adapter directly; **writes may not**. A failed read costs a wait, a failed write
+leaves the database asserting something untrue about the provider with nothing to detect it. Full
+design in `plans/provider-writes.md`.
+
+- **Local state records what the provider confirmed. Intent lives in `ProviderWrite`.** Never set
+  `publication_state` or `privacy_status` because a write was requested; only because one succeeded.
+- **Enqueue in the same transaction as the local change** that motivated it, via
+  `integrations.outbox.enqueue` or an app's wrapper (`videos.writes.request_*`).
+- **Guards are re-checked in the handler, at execution.** An approval can be withdrawn and a talk
+  marked `do_not_record` between enqueue and drain.
+- `integrations.outbox` owns the queue and must not import an app that owns data. Apps register a
+  handler per `(capability, operation)` from their `AppConfig.ready`, as `videos.writes` does.
+- Draining is serial and stops the batch on `QuotaExceeded`, because every rejected call still costs a
+  YouTube unit.
+
 ## Conventions
 
 - Subclass `common.models.BaseModel` for new models. UUIDv7 PKs, never sequential integers: IDs
   appear in URLs emailed to speakers.
 - `JSONField` is the standard tool for structured-but-variable data: `User.data`,
-  `Organization.settings` / `Event.settings`, provider `config`, synced `raw` payloads. Anything
-  needing a query, a constraint, or validation graduates to a real column.
+  `Organization.settings` / `Event.settings`, provider `config`, `SyncRun.counts`,
+  `ProviderWrite.desired`. Anything needing a query, a constraint, or validation graduates to a real
+  column. Note there is deliberately **no** `raw` provider-payload field anywhere; see
+  `plans/decisions.md`.
 - `settings.TESTING` (`"pytest" in sys.modules`) is the test sentinel. There is no test settings
   module — the suite runs against the same settings production does.
 - `django-ninja` for any API, never DRF. `httpx` for outbound HTTP, never requests.

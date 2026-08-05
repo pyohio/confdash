@@ -52,8 +52,21 @@
   `LoginToken` with `next_url` set. Do this in M1.4, before both exist in code.
 - **Magic links must be consumed by POST.** Mail security scanners prefetch URLs and burn single-use
   GET links before the recipient clicks. Needs an interstitial page in M1.4.
-- **Organizer view decorator** still to write, wrapping `events.authz.require_org_scope`. Waiting on
-  the URL shape, which M1.3 forces. The predicates it wraps are done.
+- **An anonymous request to an organizer URL gets 403, not a redirect to login.** Correct as a default
+  (fail closed) but poor UX, and there is no organizer login URL to redirect to yet. Revisit when
+  organizer SSO is built: anonymous should redirect, an authenticated-but-unauthorized session should
+  still get 403, since a redirect there would loop.
+- **Wire the organizer URL include into `project/urls.py`** with the first real organizer view. The
+  shape is settled (`/o/<organization_slug>/<event_slug>/...`) and `events.decorators.organizer_view`
+  is built and tested, but nothing is routed yet.
+- **Add an `update_metadata` write operation** when M1.3a gives the `video_host` protocol a method for
+  it. Left out deliberately: an operation with no handler is a row that fails at drain time. The plan
+  is to combine it with the privacy change into one `videos.update` call, since they cost 50 units
+  together or separately.
+- **`QuotaExceeded.retry_after` has no producer yet.** The outbox honours it and falls back to a fixed
+  delay without one; the YouTube adapter in M1.2 is what should set it to the next midnight Pacific.
+- **Cron the drain** once there is a deployment target, so a write deferred to tomorrow's quota does not
+  wait for someone to run the command. Nothing else needs unattended execution.
 - **Speaker authorization** to write once M1.1 and M1.2 create `Talk`, `Speaker`, and `Video`: a
   speaker reaches only their own talks in their own events, scoped through `Speaker.user`.
 - **Drop the legacy GitHub-team-to-`is_staff` mapping in the M2 port.** Legacy set `is_staff` from

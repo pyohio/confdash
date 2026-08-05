@@ -10,8 +10,8 @@ Kept as one predicate so there is one thing to audit and one thing to test. `CLA
 cross-organization access must be impossible, and it cannot be a database constraint, so it has to be
 a function every organizer path goes through.
 
-The view decorator lands with the first organizer view, since it needs the URL shape that is still
-open. These predicates are the load-bearing part and are URL-independent.
+These predicates are URL-independent. `events.decorators.organizer_view` is what applies them to a
+request, reading the tenant from the path.
 """
 
 from django.core.exceptions import PermissionDenied

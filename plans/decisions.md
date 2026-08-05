@@ -139,6 +139,27 @@ django-unfold admin is the organizer ops surface for M1. A dedicated organizer U
 only where the admin is demonstrably the wrong tool: video/talk matching is the likely first
 case, since it wants a purpose-built review screen rather than a changelist.
 
+### Organizer URLs are path-scoped under `/o/`
+
+`/o/<organization_slug>/<event_slug>/videos/`, not a flat `/videos/<uuid>/`.
+
+Path-scoped because it makes the tenant a routing concern, so `events.decorators.organizer_view` can
+refuse before a view body runs. Deriving the tenant from the object being acted on means authorization
+can only happen after a fetch, so every view has to remember to check, and a forgotten check looks
+exactly like a working view. Both slugs are matched as a pair: `2026` exists in every organization, so
+resolving an event by its own slug would serve another tenant's event to anyone who guessed one.
+
+The `/o/` prefix rather than the organization slug at the root. Root-level slugs would need a reserved
+word list to avoid colliding with `admin/`, `healthz/`, and static, and the prefix leaves room for
+sibling namespaces (`/u/` and others) without retrofitting one later.
+
+Speaker URLs stay flat and opaque: `/review/<uuid>/`, reached from an emailed link. Different problem,
+different answer. A speaker arrives once and should not have to learn an organization slug, and a URL
+carrying no org or event is nothing to enumerate. UUIDv7 primary keys already exist for this.
+
+Subdomains per organization were rejected: wildcard DNS, a wildcard certificate, and cookie scoping,
+to buy nothing the path does not.
+
 ### Authentication: two audiences, two mechanisms
 
 Superseded an earlier plan to use magic links for everyone. Organizers and speakers have

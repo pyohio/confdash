@@ -157,8 +157,23 @@ a function every organizer path goes through.
 scope" from "wrong login method", so a response cannot tell an outsider whether an organization
 exists or who belongs to it.
 
-The **view decorator is not built yet**: it needs the URL shape, which is still open. These
-predicates are URL-independent and are what the decorator will wrap.
+`events.decorators.organizer_view(scope)` applies those predicates to a request. Organizer URLs are
+`/o/<organization_slug>/<event_slug>/...`, so the decorator resolves the slug pair, checks the scope, and
+passes the view an `Event` rather than two strings:
+
+```python
+@organizer_view(Scope.VIDEOS)
+def confirm_queue(request, event): ...
+```
+
+The tenant is in the path precisely so authorization happens before a view body runs; see
+`decisions.md`. `require_scope` and `has_scope` cover the in-view cases: a second scope for an action on
+an already-authorized page, and a non-raising check so a template does not render a button the organizer
+cannot use.
+
+An anonymous request currently gets 403 rather than a redirect, because there is no organizer login URL
+to redirect to. That should change when SSO lands, for anonymous sessions only: redirecting an
+authenticated-but-unauthorized session would loop.
 
 ## Speaker authorization
 
@@ -278,8 +293,8 @@ Pin the provider image, for the same reason mailpit is pinned.
 ## Open questions
 
 - **Login URL routing.** Reaching an org's IdP requires knowing which org, before anyone is
-  authenticated. An org slug in the login path is the simplest answer and depends on the URL-shape
-  decision that M1.3 forces anyway.
+  authenticated. Now that organizer URLs are settled as `/o/<org>/<event>/...`, an org slug in the login
+  path (`/o/<org>/login/`) is the obvious match, and the `/o/` prefix leaves room for it.
 - **Bootstrapping a new organization.** The first membership cannot be group-mapped, since no
   membership exists to authorize the mapping. An operator creating the organization and its first
   owner in the Django admin is the likely answer and follows from the operators-only boundary.
@@ -301,8 +316,8 @@ Next, in order:
 1. **Speaker magic links (M1.4).** Gates M1.5 and M1.6, and PyOhio 2026's speakers are the waiting
    audience. Must call `set_auth_method(request, AuthMethod.MAGIC_LINK)`.
 2. **Speaker authorization**, once M1.1 and M1.2 have created `Talk`, `Speaker`, and `Video`.
-3. **The organizer view decorator**, with M1.3's first organizer screen, once the URL shape is
-   decided.
+3. **Organizer SSO**, which is what makes the decorator reachable by a real session: nothing sets
+   `AuthMethod.FEDERATED` yet, so only an operator password session passes it today.
 4. **Federated organizer login**, with the organizer interface. Not on the M1 critical path, because
    M1's organizers are operators who already have admin access.
 

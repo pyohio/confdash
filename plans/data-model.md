@@ -88,7 +88,32 @@ EventProviderBinding
   connection      FK -> ProviderConnection
   config          JSONField         # event-specific: {"event_id": "pyohio-2026"}
   unique (event, capability)
+
+SyncRun
+  event           FK -> Event
+  capability / provider
+  started_at / finished_at
+  succeeded / error
+  counts          JSONField         # {"talks_created": 3, "talks_updated": 40}
+
+ProviderWrite
+  event           FK -> Event
+  capability / operation            # video_host / set_privacy | upload_captions
+  target_external_id                # provider's id for the thing being written
+  desired         JSONField         # intended end state, never a diff
+  result          JSONField         # what the provider returned: track id, content hash
+  state                             # pending | in_flight | confirmed | failed | superseded
+  attempts / last_error
+  not_before      nullable          # quota deferral or a scheduled release
+  confirmed_at    nullable
+  requested_by    FK -> accounts.User, nullable
+  unique (event, target_external_id, operation) where pending
 ```
+
+The two directions of traffic get different treatment because they fail differently. A failed read
+costs a wait, so `SyncRun` is a record of what happened. A failed write leaves the database asserting
+something untrue about the provider, so `ProviderWrite` records intent *before* it is attempted, and
+local state only moves once the provider confirms. See [provider-writes.md](provider-writes.md).
 
 Two levels because credentials and event-specific settings have different lifetimes.
 Credentials are onboarding state; which Pretalx event to pull is per-iteration state. Pretalx

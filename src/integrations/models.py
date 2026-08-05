@@ -9,6 +9,9 @@ Two levels, because credentials and event-specific settings have different lifet
 An organization may hold several connections for the same provider, because some providers issue
 credentials per event: Pretalx does, so PyOhio has `pretalx-pyohio-2026`, `pretalx-pyohio-2027`,
 and so on. Uniqueness is therefore `(organization, slug)`, never `(organization, provider)`.
+
+`SyncRun` and `ProviderWrite` record the two directions of traffic: what a read attempt did, and what
+a write is meant to do before it is attempted.
 """
 
 from django.core.exceptions import ValidationError
@@ -217,3 +220,99 @@ class SyncRun(BaseModel):
         if not self.finished_at:
             return None
         return (self.finished_at - self.started_at).total_seconds()
+
+
+class ProviderWrite(BaseModel):
+    """One intended change to a provider, durable before it is attempted.
+
+    Reads and writes fail differently. A failed read costs a wait, and the upsert-and-never-delete
+    rules mean a partial one cannot corrupt anything. A failed write leaves the database asserting
+    something about the provider that is not true, and nothing detects it, because the only record of
+    the intent was the request that failed.
+
+    So: **local state records what the provider has confirmed, and intent lives here.** Publishing sets
+    the desired state in this table, the write executes, the provider confirms, and only then does
+    local state move. Divergence stops being something to reconcile because no code path produces it.
+
+    The load-bearing property is that a row is committed in the same transaction as the local change
+    that motivated it, so there is no window where a speaker's caption edit is saved but the intent to
+    push it is lost. See plans/provider-writes.md.
+    """
+
+    class Operation(models.TextChoices):
+        SET_PRIVACY = "set_privacy", "Set privacy"
+        UPLOAD_CAPTIONS = "upload_captions", "Upload captions"
+
+    class State(models.TextChoices):
+        PENDING = "pending", "Pending"
+        IN_FLIGHT = "in_flight", "In flight"
+        CONFIRMED = "confirmed", "Confirmed"
+        FAILED = "failed", "Failed"
+        SUPERSEDED = "superseded", "Superseded"
+
+    # Attempts before a write stops retrying and becomes visibly failed. Low, because at these volumes
+    # a write that has failed three times needs a person, not a fourth attempt.
+    MAX_ATTEMPTS = 3
+
+    event = models.ForeignKey("events.Event", on_delete=models.CASCADE, related_name="provider_writes")
+    capability = models.CharField(max_length=32, choices=Capability.choices())
+    operation = models.CharField(max_length=32, choices=Operation.choices)
+
+    target_external_id = models.CharField(max_length=128, help_text="The provider's id for the thing being written.")
+
+    # The intended end state, never a delta. Retrying is then idempotent by construction, and a
+    # superseded request can be discarded rather than replayed in order.
+    desired = models.JSONField(default=dict)
+
+    # What the provider returned once the write succeeded, e.g. a caption track id and the hash of the
+    # content that was uploaded. Enough to tell later whether a further write is needed.
+    result = models.JSONField(default=dict, blank=True)
+
+    state = models.CharField(max_length=20, choices=State.choices, default=State.PENDING)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_error = models.TextField(blank=True)
+
+    not_before = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Earliest this may be attempted. Set by a quota deferral or a scheduled release.",
+    )
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+
+    requested_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="provider_writes",
+    )
+
+    class Meta:
+        constraints = [
+            # One pending write per target and operation. A speaker editing captions three times needs
+            # the latest content pushed once, not three uploads; a new request supersedes the pending
+            # one rather than queueing behind it. Scoped to `pending` so history is kept and so a write
+            # already in flight does not block recording fresher intent.
+            #
+            # The condition uses a literal because a nested class body cannot see names from the
+            # enclosing one, so `State.PENDING` here would be a NameError.
+            models.UniqueConstraint(
+                fields=["event", "target_external_id", "operation"],
+                condition=models.Q(state="pending"),
+                name="one_pending_write_per_target_and_operation",
+            ),
+        ]
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["state", "not_before"])]
+
+    def __str__(self) -> str:
+        return f"{self.operation} {self.target_external_id} ({self.state})"
+
+    @property
+    def is_open(self) -> bool:
+        """Still expected to happen, as opposed to settled."""
+        return self.state in {self.State.PENDING, self.State.IN_FLIGHT}
+
+    @property
+    def attempts_remain(self) -> bool:
+        return self.attempts < self.MAX_ATTEMPTS
