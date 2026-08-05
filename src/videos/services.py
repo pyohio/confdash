@@ -106,6 +106,51 @@ def mark_standalone(video: Video, *, user=None) -> Video:
     return video
 
 
+def approve(video: Video, *, user) -> Video:
+    """Record approval, deriving whether it counts as the speaker's own consent.
+
+    `approval_source` is derived rather than passed in, so no caller can record a staff approval as a
+    speaker's. The question asked is simply whether the approver is one of the talk's speakers: if they
+    are, the speaker consented, whichever way they logged in.
+
+    Raises `ValueError` when the video is not eligible, rather than silently approving something that
+    can never publish.
+    """
+    from videos.authz import may_approve_as_speaker
+
+    if video.needs_matching:
+        raise ValueError("Match the video to a talk, or mark it standalone, before approving it.")
+
+    source = Video.ApprovalSource.SPEAKER if may_approve_as_speaker(user, video) else Video.ApprovalSource.STAFF
+
+    video.review_state = Video.ReviewState.APPROVED
+    video.approval_source = source
+    video.approved_by = user
+    video.approved_at = timezone.now()
+    video.save(update_fields=["review_state", "approval_source", "approved_by", "approved_at", "updated_at"])
+
+    logger.info(
+        "video.approved",
+        event_slug=video.event.slug,
+        video_external_id=video.external_id,
+        approval_source=source,
+        review_track=video.review_track,
+    )
+    return video
+
+
+def request_changes(video: Video, *, user) -> Video:
+    """Send a video back, clearing any prior approval so it cannot publish on a stale one."""
+    video.review_state = Video.ReviewState.CHANGES_REQUESTED
+    video.approval_source = ""
+    video.approved_by = None
+    video.approved_at = None
+    video.save(update_fields=["review_state", "approval_source", "approved_by", "approved_at", "updated_at"])
+
+    logger.info("video.changes_requested", event_slug=video.event.slug, video_external_id=video.external_id)
+    return video
+
+
 def unmatch(video: Video) -> Video:
     """Undo a match, returning the video to the queue.
 

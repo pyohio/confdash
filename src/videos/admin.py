@@ -59,11 +59,11 @@ class VideoInline(TabularInline):
 class VideoAdmin(ModelAdmin):
     form = VideoAdminForm
 
-    list_display = ["__str__", "event", "talk", "matching_state", "privacy_status", "review_state"]
-    list_filter = ["event", "review_state", "publication_state", "privacy_status", "standalone"]
+    list_display = ["__str__", "event", "talk", "matching_state", "privacy_status", "review_state", "approval_source"]
+    list_filter = ["event", "review_state", "approval_source", "publication_state", "privacy_status", "standalone"]
     search_fields = ["title", "external_id", "talk__title"]
     autocomplete_fields = ["event", "talk", "matched_by", "approved_by"]
-    readonly_fields = ["created_at", "updated_at", "matched_at", "approved_at"]
+    readonly_fields = ["created_at", "updated_at", "matched_at", "approved_at", "approval_source"]
     actions = ["action_mark_standalone", "action_unmatch"]
 
     def get_queryset(self, request):

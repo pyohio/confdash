@@ -43,6 +43,10 @@ class Video(BaseModel):
         UNLISTED = "unlisted", "Unlisted"
         PUBLIC = "public", "Public"
 
+    class ApprovalSource(models.TextChoices):
+        SPEAKER = "speaker", "Speaker approved"
+        STAFF = "staff", "Staff approved"
+
     event = models.ForeignKey("events.Event", on_delete=models.CASCADE, related_name="videos")
     talk = models.ForeignKey(
         "program.Talk",
@@ -100,6 +104,18 @@ class Video(BaseModel):
         null=True,
         blank=True,
         related_name="approved_videos",
+        help_text="Who clicked approve.",
+    )
+
+    # Whether the talk's own speaker approved, or staff approved for them. `approved_by` alone cannot
+    # answer that, and the difference is consent rather than bookkeeping: some speakers ask us to do
+    # their caption review, and publishing on their behalf should be recorded as exactly that rather
+    # than indistinguishable from the speaker having checked it themselves.
+    approval_source = models.CharField(
+        max_length=20,
+        choices=ApprovalSource.choices,
+        blank=True,
+        help_text="Set when approved. Blank until then.",
     )
 
     publication_state = models.CharField(

@@ -142,3 +142,74 @@ class TestUnmatch:
         video.refresh_from_db()
         assert video.standalone is False
         assert video.needs_matching is True
+
+
+class TestApprove:
+    """`approval_source` is derived, so no caller can record a staff approval as a speaker's."""
+
+    def test_a_speaker_approving_their_own_talk_records_speaker_consent(self, event, user):
+        from program.models import Speaker, Talk, TalkSpeaker
+        from videos.services import approve
+
+        t = Talk.objects.create(event=event, external_id="T1", title="Talk", state="confirmed")
+        s = Speaker.objects.create(event=event, external_id="S1", name="A Speaker", user=user)
+        TalkSpeaker.objects.create(talk=t, speaker=s)
+        v = Video.objects.create(event=event, external_id="v1", talk=t)
+
+        approve(v, user=user)
+
+        v.refresh_from_db()
+        assert v.approval_source == Video.ApprovalSource.SPEAKER
+        assert v.approved_by == user
+        assert v.review_state == Video.ReviewState.APPROVED
+
+    def test_staff_approving_someone_elses_talk_records_staff(self, video, talk, user):
+        """Doing a speaker's caption review for them must not look like the speaker checked it."""
+        from videos.services import approve
+
+        link_video_to_talk(video, talk, user=user)
+
+        approve(video, user=user)
+
+        video.refresh_from_db()
+        assert video.approval_source == Video.ApprovalSource.STAFF
+        assert video.may_be_published is True
+
+    def test_staff_approving_a_standalone_video_records_staff(self, video, user):
+        from videos.services import approve
+
+        mark_standalone(video, user=user)
+
+        approve(video, user=user)
+
+        video.refresh_from_db()
+        assert video.approval_source == Video.ApprovalSource.STAFF
+        assert video.may_be_published is True
+
+    def test_refuses_to_approve_a_video_still_awaiting_matching(self, video, user):
+        """Approving it would produce a record that can never publish and cannot say who consented."""
+        from videos.services import approve
+
+        with pytest.raises(ValueError, match="before approving"):
+            approve(video, user=user)
+
+        video.refresh_from_db()
+        assert video.review_state == Video.ReviewState.PENDING
+
+
+class TestRequestChanges:
+    def test_clears_a_prior_approval(self, video, talk, user):
+        """Otherwise a stale approval could still satisfy the publication guard."""
+        from videos.services import approve, request_changes
+
+        link_video_to_talk(video, talk, user=user)
+        approve(video, user=user)
+
+        request_changes(video, user=user)
+
+        video.refresh_from_db()
+        assert video.review_state == Video.ReviewState.CHANGES_REQUESTED
+        assert video.approval_source == ""
+        assert video.approved_by is None
+        assert video.approved_at is None
+        assert video.may_be_published is False
