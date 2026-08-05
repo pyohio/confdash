@@ -144,14 +144,18 @@ Passwordless login, needed before anyone can be invited.
 - Rate limiting on link requests, and no user-existence disclosure: **built**. Unknown, inactive, and
   throttled addresses all reach the same page as a successful send, because anything else turns the
   login form into a way to test who spoke at a conference. Throttling is per address; see `issues.md`.
-- `Speaker.user` resolution by email on first login: **not built**, and it is what makes a signed-in
-  speaker into a speaker rather than just a user. Wants doing with speaker authorization.
-- Authorization: a speaker may only see videos for talks they are a speaker on. `videos/authz.py` has
-  the predicates; nothing routes to them yet, because M1.5 is the surface they protect.
+- `Speaker.user` resolution by email on first login: **built**, in `program/identity.py`, wired to the
+  `user_logged_in` signal rather than called from a login view. There will be more than one way in, and a
+  resolution step each path has to remember is one a future path will forget. Claims only unclaimed rows:
+  a `Speaker` already pointing at someone else is a data problem to look at, not one to fix by
+  reassignment.
+- Authorization: a speaker may only see videos for talks they are a speaker on: **built**, routed through
+  `videos/authz.py` from the review views.
 
-Done when a speaker can click an emailed link and land on their own video, and cannot reach
-anyone else's. Not there yet: login works and refuses organizer access, but there is no speaker-facing
-video page to land on, and no hostname to send a real link to.
+Done when a speaker can click an emailed link and land on their own video, and cannot reach anyone
+else's. **That round trip works**, verified end to end against a real Pretalx-synced speaker. What is
+missing is playback and captions, which need M1.2, and a deployed hostname before a link can go to a real
+speaker.
 
 Email is settled: Anymail with Mailgun, sending from confdash.org for the whole deployment. Still
 needs a deployment with a real hostname, since a magic link has to point somewhere, and DNS

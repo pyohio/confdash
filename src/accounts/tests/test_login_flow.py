@@ -186,10 +186,10 @@ class TestConsumingALink:
 
         assert response["Location"] == "/accounts/signed-in/"
 
-    def test_a_link_with_no_destination_lands_somewhere_real(self, client, speaker):
+    def test_a_link_with_no_destination_lands_on_the_review_list(self, client, speaker):
         client.post(LOGIN, {"email": "speaker@example.org"})
 
         response = client.post(link_from_mail(), follow=True)
 
         assert response.status_code == 200
-        assert "signed in" in response.content.decode().lower()
+        assert response.redirect_chain[-1][0] == "/review/"

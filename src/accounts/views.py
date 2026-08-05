@@ -89,9 +89,10 @@ def consume_link(request, token: str):
 
 
 def signed_in(request):
-    """Where a link with no destination lands.
+    """Where a link with no destination lands: the user's own review list.
 
-    A placeholder until speaker review exists: a magic-link session has nothing else to reach yet, and
-    sending it to `/` would be a 404.
+    Not a landing page of its own. A speaker following a link with no deep destination wants their
+    videos, and an organizer arriving by magic link deliberately gets the same speaker view, since
+    organizer screens need a federated session.
     """
-    return render(request, "accounts/signed_in.html")
+    return redirect(reverse("review:my_reviews"))

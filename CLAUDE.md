@@ -61,8 +61,8 @@ src/
   events/          Organization, OrganizationMembership, Event, scopes, authz
   integrations/    ProviderConnection, EventProviderBinding, SyncRun, ProviderWrite, outbox
     providers/     capability protocols (base.py) and per-provider adapters
-  program/         Talk, Speaker, TalkSpeaker, and the talk-source sync
-  videos/          Video, matching, review authz, and the organizer confirm queue
+  program/         Talk, Speaker, TalkSpeaker, the talk-source sync, and speaker identity
+  videos/          Video, matching, review authz, the organizer confirm queue, the review surface
   templates/       one tree: base.html, then <app>/ and <app>/partials/ for HTMX fragments
 ```
 
@@ -104,6 +104,10 @@ Speaker login is built: `/accounts/login/` mails a link, and the link is **consu
 interstitial page, because mail scanners prefetch URLs and would spend a single-use GET before the
 recipient clicks. Tokens are hashed at rest, single-use, expiring, and throttled per address. The
 request view never reveals whether an address exists, and neither does a throttled one.
+
+**Speaker identity resolves on the `user_logged_in` signal**, in `program/identity.py`, not in a login
+view. More login paths are coming and a step each one must remember is one a future path will forget.
+Speaker-facing URLs are flat and opaque (`/review/<uuid>/`): no org slug to learn, nothing to enumerate.
 
 Nothing sets `AuthMethod.FEDERATED` yet, so **no organizer URL is reachable by a real browser session**
 until organizer SSO lands. Tests mint an organizer session via the `as_federated` fixture.

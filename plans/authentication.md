@@ -180,12 +180,22 @@ authenticated-but-unauthorized session would loop.
 
 ## Speaker authorization
 
-A speaker reaches only their own talks, in their own events. Nothing broader: not other talks in the
-same event, not their own talks in an event they were not accepted to.
+**Built.** `videos/authz.py` for the predicates, `program/identity.py` for the join that makes them
+mean anything, `videos/review_views.py` for the surface.
 
-Not yet built, because `Talk`, `Speaker`, and `Video` arrive in M1.1 and M1.2. It belongs beside
-`events.authz` when it does, scoped through `Speaker.user` rather than by fetching an object and
-checking its owner afterwards, since the latter leaks existence through timing and error differences.
+A speaker reaches only their own talks, in their own events. Nothing broader: not other talks in the
+same event, not their own talks in an event they were not accepted to. Scoped through `Speaker.user` in
+the query rather than by fetching an object and checking its owner afterwards, since the latter leaks
+existence through timing and error differences and is easy to forget on one code path.
+
+Identity is resolved by **email**, which is the only join available: provider speaker codes are per-event
+and per-provider, and nothing else in a `SpeakerRecord` identifies a person. So this is exactly as
+trustworthy as the provider's email verification, which is why it grants a speaker their own talks and
+never organizer access. `accounts.auth_method` refuses the latter to a magic-link session regardless of
+what memberships the user holds.
+
+Review URLs are flat and opaque (`/review/<uuid>/`) rather than path-scoped, because a speaker arrives
+from an emailed link and should not have to learn an organization slug.
 
 ## The Django admin is for operators only
 
@@ -319,8 +329,8 @@ Next, in order:
 1. ~~**Speaker magic links (M1.4).**~~ Built, and it does call
    `set_auth_method(request, AuthMethod.MAGIC_LINK)`. Still needs a deployed hostname before a real
    link can be sent to a real speaker.
-2. **Speaker authorization**, plus `Speaker.user` resolution by email at first login, which is what
-   turns a signed-in user into a speaker. `videos/authz.py` holds the predicates already.
+2. ~~**Speaker authorization**, plus `Speaker.user` resolution by email at first login.~~ Built.
+   Resolution hangs off `user_logged_in` so every future login path gets it for free.
 3. **Organizer SSO**, which is what makes the decorator reachable by a real session: nothing sets
    `AuthMethod.FEDERATED` yet, so only an operator password session passes it today.
 4. **Federated organizer login**, with the organizer interface. Not on the M1 critical path, because

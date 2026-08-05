@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Your videos{% endblock %}
+
+{% block content %}
+  <h1 class="text-2xl font-semibold mb-1">Your videos</h1>
+  <p class="text-sm opacity-70 mb-6">
+    Recordings of talks you gave. Review each one and approve it for publication.
+  </p>
+
+  {% if videos %}
+    <div class="space-y-3">
+      {% for video in videos %}
+        <a href="{% url 'review:review' video.pk %}" class="card bg-base-100 shadow-sm hover:shadow-md block">
+          <div class="card-body flex-row flex-wrap items-center gap-3 p-4">
+            <div class="flex-1 min-w-0">
+              <div class="font-medium break-words">{{ video.talk.title|default:video.title }}</div>
+              <div class="text-xs opacity-60 mt-0.5">{{ video.event.name }}</div>
+            </div>
+            <span class="badge {% if video.review_state == 'approved' %}badge-success{% elif video.review_state == 'changes_requested' %}badge-warning{% else %}badge-ghost{% endif %} whitespace-nowrap">
+              {{ video.get_review_state_display }}
+            </span>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    {#
+      Says nothing about why. A user with no linked Speaker rows and a user whose talks have no videos yet
+      are the same from here, and neither is a state to explain in terms of the data model.
+    #}
+    <div class="alert">
+      <span>Nothing to review yet. If you gave a talk, its recording is still being processed.</span>
+    </div>
+  {% endif %}
+{% endblock %}

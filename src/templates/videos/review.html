@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Review — {{ video.talk.title|default:video.title }}{% endblock %}
+
+{% block content %}
+  <div class="mx-auto max-w-3xl">
+    <a href="{% url 'review:my_reviews' %}" class="link text-sm opacity-70">← Your videos</a>
+
+    <h1 class="text-2xl font-semibold mt-2 mb-1 break-words">{{ video.talk.title|default:video.title }}</h1>
+    <p class="text-sm opacity-70 mb-6">{{ video.event.name }}</p>
+
+    {#
+      No player: embedding is provider knowledge, and nothing outside integrations/providers may know
+      what a YouTube URL looks like. The protocol gains an embed method with the adapter in M1.2.
+    #}
+    <div class="card bg-base-100 shadow-sm mb-4">
+      <div class="card-body gap-2">
+        <h2 class="card-title text-base">The recording</h2>
+        <p class="text-sm opacity-70">
+          Playback arrives with the video-host integration. For now this page carries the review state
+          and the decision.
+        </p>
+        <dl class="text-sm mt-2 space-y-1">
+          <div class="flex gap-2">
+            <dt class="opacity-60 w-32">Review state</dt>
+            <dd>{{ video.get_review_state_display }}</dd>
+          </div>
+          <div class="flex gap-2">
+            <dt class="opacity-60 w-32">Publication</dt>
+            <dd>{{ video.get_publication_state_display }}</dd>
+          </div>
+          {% if video.approved_at %}
+            <div class="flex gap-2">
+              <dt class="opacity-60 w-32">Approved</dt>
+              <dd>{{ video.approved_at }}{% if video.approval_source %} ({{ video.get_approval_source_display }}){% endif %}</dd>
+            </div>
+          {% endif %}
+        </dl>
+      </div>
+    </div>
+
+    {% if video.talk.do_not_record %}
+      <div class="alert alert-warning">
+        <span>This talk is marked do-not-record, so it will not be published whatever is decided here.</span>
+      </div>
+    {% else %}
+      <div class="card bg-base-100 shadow-sm">
+        <div class="card-body gap-3">
+          <h2 class="card-title text-base">Your decision</h2>
+          {% if as_speaker %}
+            <p class="text-sm opacity-70">Approving records your own consent to publish.</p>
+          {% else %}
+            {# Staff reviewing on a speaker's behalf. Recorded as such rather than as the speaker's consent. #}
+            <p class="text-sm opacity-70">
+              You are reviewing this as staff, so approval is recorded as a staff approval rather than
+              the speaker's own.
+            </p>
+          {% endif %}
+
+          <div class="flex flex-wrap gap-2">
+            <form method="post" action="{% url 'review:approve' video.pk %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-primary">Approve for publication</button>
+            </form>
+            <form method="post" action="{% url 'review:request_changes' video.pk %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-outline">Something needs fixing</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}
