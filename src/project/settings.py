@@ -81,6 +81,7 @@ INSTALLED_APPS = [
     "accounts",
     "events",
     "integrations",
+    "program",
 ]
 
 MIDDLEWARE = [

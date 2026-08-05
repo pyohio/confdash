@@ -8,6 +8,10 @@ import pytest
 
 from accounts.models import User
 from events.models import Event, Organization, OrganizationMembership
+from integrations import registry
+from integrations.models import EventProviderBinding, ProviderConnection
+from integrations.providers.base import Capability
+from integrations.tests.fakes import FakeTalkSource, FakeVideoHost
 
 
 @pytest.fixture
@@ -45,3 +49,69 @@ def organizer(organization, user) -> User:
         role=OrganizationMembership.Role.ORGANIZER,
     )
     return user
+
+
+# --- Providers --------------------------------------------------------------
+#
+# Shared rather than scoped to `integrations/tests/` because sync services live in the apps that own
+# the data they persist, and those are what the fakes exist to test.
+
+
+@pytest.fixture
+def fake_providers():
+    """Register the fake adapters for the duration of one test.
+
+    The registry is module-level state, so it is snapshotted and restored rather than cleared: real
+    adapters registered at app startup must still be there afterwards.
+    """
+    saved = dict(registry._REGISTRY)
+    registry.register(FakeTalkSource)
+    registry.register(FakeVideoHost)
+    try:
+        yield
+    finally:
+        registry._REGISTRY.clear()
+        registry._REGISTRY.update(saved)
+
+
+@pytest.fixture
+def talk_connection(organization, fake_providers) -> ProviderConnection:
+    connection = ProviderConnection(
+        organization=organization,
+        slug="fake-talks-2026",
+        name="Fake talk source (2026)",
+        capability=Capability.TALK_SOURCE,
+        provider="fake",
+    )
+    connection.set_credentials({"api_token": "test-token"})
+    connection.save()
+    return connection
+
+
+@pytest.fixture
+def talk_binding(event, talk_connection) -> EventProviderBinding:
+    return EventProviderBinding.objects.create(
+        event=event,
+        capability=Capability.TALK_SOURCE,
+        connection=talk_connection,
+        config={"event_id": "pyohio-2026"},
+    )
+
+
+@pytest.fixture
+def fake_talks(fake_providers):
+    """Set the records `FakeTalkSource` returns, restoring the class attributes afterwards.
+
+    The fake holds them as class attributes, so a test that mutated them without restoring would
+    leak into the next one.
+    """
+    original = (FakeTalkSource.speakers, FakeTalkSource.talks)
+
+    def install(*, speakers=(), talks=()):
+        FakeTalkSource.speakers = list(speakers)
+        FakeTalkSource.talks = list(talks)
+
+    try:
+        yield install
+    finally:
+        FakeTalkSource.speakers, FakeTalkSource.talks = original
