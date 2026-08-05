@@ -34,30 +34,74 @@ sync changes nothing.
 
 YouTube adapter plus video ingest.
 
-- `YouTubeVideoHost` implementing `list_videos`, reading a playlist from the binding config.
+**Uploading is not ours.** The videography team processes recordings and uploads them to the
+organization's own YouTube channel, leaving each video unlisted and collecting them in a per-event
+playlist that is also unlisted. This app reads that playlist; it never uploads. That is a hard
+boundary and the reason `VideoHost` has no upload method.
+
+Because the uploads live on the organization's channel, the connection's credentials can edit them,
+which is what makes M1.5, M1.7, and M1.3a possible at all.
+
+Unlisted rather than private matters: an unlisted video can be embedded and watched by anyone holding
+the link, so a speaker can review theirs without a YouTube account or channel access. A private video
+can only be viewed by the owner, which would make speaker review impossible.
+
+- `YouTubeVideoHost` implementing `list_videos`, reading the playlist id from the binding config.
 - OAuth credentials seeded out of band into a `ProviderConnection` (see decisions: the
   self-service consent flow is deferred).
 - `sync_videos` service: upsert `Video` rows, unmatched, with `privacy_status` as reported.
 - `just manage sync_videos --event <slug>`.
 
+Read pattern: `playlistItems.list` for the video ids, then `videos.list` batched 50 ids at a time for
+authoritative title, description, `privacyStatus`, and duration. The playlist item's own snippet can
+go stale against the video, so it is not the source of truth.
+
 Done when the playlist's videos are `Video` rows with `talk` still null.
 
 ### M1.3 Matching
 
-The organizer step that turns unmatched videos into talk-linked ones. Videos carry placeholder
-titles set at upload, so matching is title-based with human confirmation.
+The organizer step that turns unmatched videos into talk-linked ones.
 
+**Videos carry the real talk titles, not placeholders**, because the videography team names them
+from the schedule when uploading. Formatting differs though: separators, punctuation, case, and
+truncation. So matching is title-based and should get most of the way there on its own, with human
+confirmation rather than human data entry.
+
+- Manual entry first: a video ID or URL field on the talk, editable in the admin. This is the floor,
+  it works on day one, and it is the fallback whenever the matcher is unsure. Everything below only
+  makes it faster.
 - Suggestion pass: normalized fuzzy match of video title against talk titles, producing ranked
-  candidates with scores. Deterministic and testable, no ML.
+  candidates with scores. Deterministic and testable, no ML. Normalization has to survive
+  punctuation, case, separator, and whitespace differences, since those are the expected variance.
 - Organizer review screen: unmatched videos with suggested talks, confirm or override,
-  server-rendered with HTMX. This is the first place the admin is the wrong tool — a
-  side-by-side confirm queue is the whole job.
+  server-rendered with HTMX. A side-by-side confirm queue is the whole job, and it is the first
+  place the admin is the wrong tool.
 - Bulk-accept high-confidence matches, with an undo.
 
-Done when every video for an event is either matched or explicitly marked unmatchable.
+Expect videos that match no talk at all: the 2025 playlist included a welcome, closing remarks, and
+a keynote recording alongside the talks. Marking a video explicitly unmatchable is a normal outcome,
+not an error. Expect the reverse too, since not every talk gets a usable recording.
 
-Open: the exact placeholder title convention PyOhio 2026 uploads will use. The matcher should
-not assume a format it has not seen; confirm the convention before tuning the scorer.
+Done when every video for an event is either matched to a talk or explicitly marked unmatchable.
+
+Open: nothing blocking. The scorer can be tuned once a real playlist exists to test against.
+
+### M1.3a Metadata normalization
+
+Optional, and separable from matching. Videos arrive titled and described by whoever uploaded them;
+publication is the moment to give them a consistent public form.
+
+- A per-event title and description template, resolved through `Event.settings`, so each event can
+  choose its own convention.
+- `VideoHost` needs a metadata-write capability, which no protocol method covers yet. That is the
+  one piece of provider surface this adds.
+- Dry run that shows current versus proposed for every video before anything is written, since this
+  overwrites work the videography team did.
+- Idempotent: re-running against an already-normalized video changes nothing.
+- Audit trail of what was rewritten and when, matching the publication action.
+
+Sequence it with M1.7, since both are writes to the host and both want the same dry-run and audit
+treatment. Not required for a speaker to review a video, so it must not gate M1.5.
 
 ### M1.4 Speaker authentication
 
@@ -80,8 +124,12 @@ verification of confdash.org with Mailgun.
 The speaker-facing surface.
 
 - Video player with the unlisted video embedded.
+- Caption fetch on first need rather than in a bulk sync, cached in `CaptionTrack` and never
+  re-downloaded. This is a quota decision, not a laziness one: see the risks below.
 - Caption viewing, with a transcript view aligned to playback.
-- Caption editing and re-upload, writing a new `CaptionTrack` row and pushing to the host.
+- Caption editing and re-upload: a new `CaptionTrack` row plus a queued `ProviderWrite`, committed in
+  one transaction so a failed push cannot leave us believing captions were corrected when they were
+  not. See [provider-writes.md](provider-writes.md).
 - Report a problem: a comment, optionally timecoded.
 - Approve, which sets `review_state` and stamps `approved_at` / `approved_by`.
 
@@ -106,12 +154,18 @@ not responded.
 
 - Per-event release policy in `Event.settings`, resolving to org default:
   `immediate` (flip to public on approval) or `hold` (approve now, release together).
-- Immediate: on approval, set privacy public via the adapter, update `publication_state`.
-- Hold: a playlist-wide release action that publishes all approved videos, with a dry run.
-- Guard: never publish a video that is not `approved`.
-- Audit: who released what, when.
+- Immediate: on approval, queue a privacy write; `publication_state` becomes `published` only once the
+  provider confirms it, never on the strength of having asked.
+- Hold: a playlist-wide release action that queues writes for all approved videos, with a dry run.
+- Guards, checked when the write executes rather than when it is queued, since approval can be
+  withdrawn and `do_not_record` can be set in between: never publish a video that is not `approved`,
+  and never publish a talk marked `do_not_record`.
+- Audit: who released what, when. The `ProviderWrite` row already carries `requested_by` and
+  `confirmed_at`, so this is a view over existing data rather than a second log.
 
-Done when both policies work end to end against YouTube and the guard is covered by tests.
+Done when both policies work end to end against YouTube, both guards are covered by tests, and a
+publish interrupted by quota exhaustion resumes on the next drain without anything being
+double-published or silently skipped.
 
 ## Sequencing
 
@@ -121,12 +175,51 @@ un-published without someone noticing.
 
 ## Risks
 
-- **YouTube API quota.** The Data API has a daily quota; caption downloads and privacy updates
-  are not free. Measure actual cost against a real playlist during M1.2 before assuming a
-  full-event sync fits in a day's quota.
+- **YouTube API quota, and it is captions that cost.** The default allocation is 10,000 units a day.
+  Reading is effectively free: `playlistItems.list` and `videos.list` are 1 unit each, so ingesting a
+  whole playlist costs about 2 units. Captions are the opposite: `list` is 50, `download` 200,
+  `insert` 400, `update` 450, and `videos.update` is 50.
+
+  For roughly 31 videos, downloading every caption track once is about 7,750 units, or 78% of a day,
+  before a single publish. Three consequences, all design decisions rather than warnings:
+
+  - **Fetch captions per video, on demand** (first speaker visit, or on invitation), never as a bulk
+    prefetch. Cost then spreads across days as speakers engage instead of arriving as one spike.
+  - **Download each track once and keep it.** `CaptionTrack` is append-only with a `content_hash`, so
+    re-downloading is never necessary.
+  - **Combine the privacy flip and any metadata rewrite into one `videos.update`.** Both touch the
+    same resource with `part=snippet,status`, so doing them separately doubles the write cost for
+    nothing.
+
+  Confirm these figures against the current quota table when M1.2 lands, since they drive the
+  sequencing above.
+
+  **The quota is a hard limit with no paid overage.** There is no billing dimension for it: unlike
+  most Google Cloud APIs, YouTube Data API quota cannot be bought. On exhaustion every call returns
+  `403 quotaExceeded` and stays that way until reset, which happens at **midnight Pacific Time** on a
+  fixed daily boundary rather than a rolling window. Exhausting it at 09:00 PT means no video
+  operations for fifteen hours. Every request costs at least one unit including invalid ones, so a
+  retry loop on errors burns quota; retries need a ceiling.
+
+  More quota is granted, not purchased: it requires passing a **YouTube API Compliance Audit** via
+  the Audit and Quota Extension Form. Free, but discretionary and slow, so the app must be designed to
+  live inside 10,000 units a day and treat any extension as a bonus.
+
+  **Multi-tenancy consequence.** Quota is scoped to the Google Cloud project that owns the OAuth
+  client, not to a channel or a user. One deployment serving several organizations therefore shares a
+  single 10,000-unit pool, and roughly one event's caption ingest fills a day. This mirrors the email
+  sender decision: a self-hoster brings their own Google Cloud project and their own quota, while
+  organizations onboarded onto a shared instance compete for one. If shared hosting becomes real,
+  either the audit gets done or video work needs per-organization pacing.
 - **Caption upload fidelity.** Round-tripping captions through the host can lose formatting or
   timing precision. Verify with one real video early, in M1.5, not at the end.
 - **Deployment blocking M1.4.** Magic links need real email. If the deployment decision slips,
   M1.5 can be developed against a locally-created session, but M1.4 cannot be called done.
-- **Placeholder title convention.** M1.3's matcher quality depends entirely on it. Confirm
-  before building the scorer.
+- **Write access to the videography team's uploads.** The larger risk than anything above. They
+  upload to YouTube themselves, and M1.5, M1.7, and M1.3a all write back to those videos. If the
+  credentials we hold cannot edit them, matching and speaker review still work but nothing can be
+  published from here. Confirm before M1.2.
+- **Videos arriving late or partially.** Processing is underway rather than finished, so the playlist
+  will grow over days. Sync must be safe to re-run and must never delete on absence, which the
+  upsert-only rule already covers, but it also means "every talk matched" is not a completion signal
+  until the team says uploading is done.

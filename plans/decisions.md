@@ -252,9 +252,18 @@ review for sensitive scopes, which is a project of its own and is not on the M1 
 
 ### Background job runner
 
-django-tasks (Django 6 native) when something needs it. Caption uploads and playlist syncs are
-the likely first candidates, since both are slow enough to want off the request path. M1 can
-start with management commands run by hand.
+Still deferred, and the reason has sharpened. Caption uploads looked like the first candidate, but the
+actual requirement turned out to be **durable intent, not asynchronous execution**: a provider write
+that fails must leave a record of what was supposed to happen, so local state never claims something
+about YouTube that is not true. That is a data-model concern, and a `ProviderWrite` table plus a drain
+command solves it completely. See [provider-writes.md](provider-writes.md).
+
+Conflating the two is how projects acquire a broker they never needed. django-tasks (Django 6 native)
+remains the choice if throughput ever justifies a runner, and the table does not have to change to get
+there. Nothing in M1 comes close: a few dozen writes per event, a few times a year.
+
+Postgres `SELECT ... FOR UPDATE SKIP LOCKED` covers the one genuine hazard of a table-as-queue, which
+is two drains claiming the same row.
 
 ### API surface
 

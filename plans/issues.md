@@ -20,8 +20,16 @@
   `decisions.md`.
 - **Verify confdash.org with Mailgun** (SPF/DKIM DNS records) before M1.4 sends anything. Until
   then mail from that domain will be rejected.
-- **Confirm PyOhio 2026 placeholder title convention** before tuning the M1.3 matcher.
-- **Measure YouTube Data API quota cost** against a real playlist during M1.2.
+- **Get the 2026 playlist id** into the event's `video_host` binding config. The playlist is unlisted,
+  so it has to be supplied rather than discovered.
+- **Confirm YouTube quota costs** against the current table during M1.2. Working figures: reads 1 unit,
+  `captions.list` 50, `captions.download` 200, `captions.insert` 400, `captions.update` 450,
+  `videos.update` 50, against 10,000 units a day. They imply fetching captions on demand rather than
+  in bulk; see `video-review.md` risks.
+- **Consider starting a YouTube API Compliance Audit** before onboarding a second organization onto a
+  shared deployment. Quota is per Google Cloud project, so orgs on one instance share 10,000 units a
+  day, which is about one event's caption ingest. Not needed for PyOhio alone. The audit is free but
+  discretionary and slow, so it wants lead time rather than being started when quota runs out.
 - **YouTube OAuth consent screen must not stay in Testing status.** Google expires refresh tokens
   after 7 days for apps in Testing, so M1.2 would work for a week and then fail. Marking the app
   Internal avoids both the expiry and a verification review, but needs Google Workspace. Check this

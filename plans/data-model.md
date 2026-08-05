@@ -166,15 +166,18 @@ Video
   event           FK -> Event
   talk            FK -> Talk, nullable            # null until matched
   external_id                       # provider's video id, e.g. YouTube "dQw4w9WgXcQ"
-  title                             # provider-side title, incl. placeholder titles
+  title                             # provider-side title, as uploaded
+  description                       # provider-side description, as uploaded
   privacy_status                    # provider-reported: private | unlisted | public
   duration_seconds  nullable
   published_at    nullable
+  matched_by      FK -> accounts.User, nullable    # who confirmed the talk link
+  matched_at      nullable
+  unmatchable     bool              # deliberately has no talk, e.g. a welcome or closing remarks
   review_state    pending | invited | changes_requested | approved
   approved_at     nullable
   approved_by     FK -> accounts.User, nullable
   publication_state  unpublished | scheduled | published
-  raw             JSONField
   unique (event, external_id)
 
 CaptionTrack
@@ -206,6 +209,23 @@ Two separate state fields on `Video` because approval and publication are genuin
 independent: a speaker approving does not necessarily publish, depending on the event's
 release policy. Collapsing them into one enum produces states like `approved_but_held` that
 are really a pair of facts.
+
+`publication_state` and `privacy_status` both describe **confirmed** provider state, never intent.
+`scheduled` means a write is queued; `published` is set only after the provider confirms. Intent lives
+in `ProviderWrite`, so there is no code path that can record a publication that did not happen. See
+[provider-writes.md](provider-writes.md).
+
+`talk` and `unmatchable` together give three matching states, which one nullable FK cannot express:
+no talk and not unmatchable means not yet reviewed, no talk and unmatchable means deliberately
+standalone (a welcome, closing remarks), and a talk set means matched. Without the flag, an organizer
+cannot tell "nobody has looked at this yet" from "there is correctly nothing to link".
+
+`title` and `description` mirror what was uploaded, which matters because the videography team writes
+them and M1.3a may rewrite them. Keeping the as-uploaded values makes a normalization dry run
+possible and gives something to revert to.
+
+`ReviewInvitation.token_hash` is slated for removal: invitations become lifecycle state and the
+emailed link carries an `accounts.LoginToken` instead. See [authentication.md](authentication.md).
 
 `CaptionTrack` is append-only rather than mutable so a speaker's caption edit never destroys
 the machine-generated original, and a bad edit can be rolled back by pointing at an earlier
