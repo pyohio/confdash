@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Sign in{% endblock %}
+
+{% block content %}
+  <div class="mx-auto max-w-md">
+    <div class="card bg-base-100 shadow-sm">
+      <div class="card-body gap-4">
+        <h1 class="text-xl font-semibold">Sign in</h1>
+        <p class="text-sm opacity-70">
+          Enter your email address and we will send you a link. There is no password to remember.
+        </p>
+
+        <form method="post" class="space-y-3">
+          {% csrf_token %}
+          {% if request.GET.next %}<input type="hidden" name="next" value="{{ request.GET.next }}">{% endif %}
+
+          <label class="form-control w-full">
+            <span class="label-text">{{ form.email.label }}</span>
+            {{ form.email }}
+            {% for error in form.email.errors %}
+              <span class="label-text-alt text-error mt-1">{{ error }}</span>
+            {% endfor %}
+          </label>
+
+          <button type="submit" class="btn btn-primary w-full">Email me a link</button>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock %}

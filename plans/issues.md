@@ -47,11 +47,13 @@
   nothing persists a refresh. OAuth needs it, since access tokens expire hourly and refresh tokens
   can rotate. Adapters must not touch the ORM, so the resolver should inject an
   `on_credentials_refreshed` callback that owns the write. Needed for M1.2.
-- **Collapse the two magic-link credentials.** `LoginToken` and `ReviewInvitation.token_hash` are two
-  mechanisms for one job. Make `ReviewInvitation` lifecycle state only and have its link carry a
-  `LoginToken` with `next_url` set. Do this in M1.4, before both exist in code.
-- **Magic links must be consumed by POST.** Mail security scanners prefetch URLs and burn single-use
-  GET links before the recipient clicks. Needs an interstitial page in M1.4.
+- **`ReviewInvitation` must be lifecycle state only, never a second credential.** `LoginToken` with
+  `next_url` is the one mechanism, and it is built. When M1.6 adds `ReviewInvitation`, give it sent /
+  opened / approved / stale and have its link carry a `LoginToken`, rather than a `token_hash` of its
+  own. Resending mints a fresh token.
+- **Login-link throttling is per address, not per IP**, counted on issued `LoginToken` rows because
+  there is no cache in this deployment. That protects an inbox from being mail-bombed; it does nothing
+  about an attacker working through many addresses. Revisit if Valkey ever lands.
 - **An anonymous request to an organizer URL gets 403, not a redirect to login.** Correct as a default
   (fail closed) but poor UX, and there is no organizer login URL to redirect to yet. Revisit when
   organizer SSO is built: anonymous should redirect, an authenticated-but-unauthorized session should

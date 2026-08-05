@@ -33,6 +33,7 @@ Project management commands:
 just manage sync_program --event 2026           # pull talks and speakers from the talk source
 just manage drain_provider_writes --dry-run     # provider writes that are due, spending no quota
 just manage drain_provider_writes               # execute them
+just manage purge_login_tokens                  # delete expired magic-link tokens
 ```
 
 Django runs in the stack, never on the host. Recipes work from the host, where they exec into the
@@ -56,7 +57,7 @@ real email locally.
 src/
   project/         settings, urls, wsgi/asgi, logging — no application logic
   common/          plain Python and abstract models, NOT a Django app
-  accounts/        User (email USERNAME_FIELD, passwordless), LoginToken, auth_method
+  accounts/        User (email USERNAME_FIELD, passwordless), LoginToken, auth_method, magic-link views
   events/          Organization, OrganizationMembership, Event, scopes, authz
   integrations/    ProviderConnection, EventProviderBinding, SyncRun, ProviderWrite, outbox
     providers/     capability protocols (base.py) and per-provider adapters
@@ -99,8 +100,13 @@ and authorized before a view body runs. Use `@organizer_view(Scope.X)` from `eve
 consumes both slugs and hands the view an `Event`. Never resolve an event by its slug alone — `2026`
 exists in every organization. `require_scope` / `has_scope` cover the in-view and in-template cases.
 
+Speaker login is built: `/accounts/login/` mails a link, and the link is **consumed by POST** from an
+interstitial page, because mail scanners prefetch URLs and would spend a single-use GET before the
+recipient clicks. Tokens are hashed at rest, single-use, expiring, and throttled per address. The
+request view never reveals whether an address exists, and neither does a throttled one.
+
 Nothing sets `AuthMethod.FEDERATED` yet, so **no organizer URL is reachable by a real browser session**
-until organizer SSO lands. Tests mint the session via the `as_federated` fixture.
+until organizer SSO lands. Tests mint an organizer session via the `as_federated` fixture.
 
 ### The provider abstraction
 

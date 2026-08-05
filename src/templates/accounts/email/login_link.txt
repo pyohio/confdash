@@ -1,0 +1,8 @@
+Hello{% if user.name %} {{ user.name }}{% endif %},
+
+Use this link to sign in:
+
+{{ link }}
+
+You will be asked to confirm before you are signed in. The link works once, and only from this
+message: if you did not ask for it, you can ignore it and nothing will happen.

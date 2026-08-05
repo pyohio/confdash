@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Check your email{% endblock %}
+
+{% block content %}
+  {#
+    Says nothing about whether the address is known, whether a mail was sent, or whether the request was
+    throttled. All three land here, so the form cannot be used to test who spoke at a conference.
+  #}
+  <div class="mx-auto max-w-md">
+    <div class="card bg-base-100 shadow-sm">
+      <div class="card-body gap-3">
+        <h1 class="text-xl font-semibold">Check your email</h1>
+        <p class="text-sm opacity-70">
+          If that address belongs to an account, a sign-in link is on its way. The link expires shortly,
+          so use it soon.
+        </p>
+        <a class="link link-primary text-sm" href="{% url 'accounts:request_link' %}">Use a different address</a>
+      </div>
+    </div>
+  </div>
+{% endblock %}

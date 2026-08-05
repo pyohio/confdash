@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}{% if usable %}Confirm sign-in{% else %}Link no longer works{% endif %}{% endblock %}
+
+{% block content %}
+  <div class="mx-auto max-w-md">
+    <div class="card bg-base-100 shadow-sm">
+      <div class="card-body gap-4">
+        {% if usable %}
+          <h1 class="text-xl font-semibold">Confirm sign-in</h1>
+          <p class="text-sm opacity-70">
+            Click to finish signing in.
+          </p>
+          {#
+            The button, not the link in the email, is what spends the token. Mail scanners fetch URLs
+            before anyone reads the message, and a GET that consumed the token would spend it on a robot.
+          #}
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary w-full">Sign in</button>
+          </form>
+        {% else %}
+          <h1 class="text-xl font-semibold">This link no longer works</h1>
+          <p class="text-sm opacity-70">
+            Sign-in links expire and can only be used once. Request a new one and it will work.
+          </p>
+          <a class="btn btn-primary w-full" href="{% url 'accounts:request_link' %}">Get a new link</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}

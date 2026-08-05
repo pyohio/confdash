@@ -76,7 +76,10 @@ notification problem, so flag such accounts rather than letting notification cod
 
 ## Speaker authentication: magic link
 
-Unchanged in mechanism, with three refinements.
+**Built.** `accounts/tokens.py` mints and spends, `accounts/services.py` sends, `accounts/views.py`
+serves the three pages, at `/accounts/login/`, `/accounts/sent/`, and `/accounts/link/<token>/`.
+
+Unchanged in mechanism, with three refinements, all of them now implemented.
 
 **One credential mechanism, not two.** `ReviewInvitation` should hold lifecycle state (sent, opened,
 approved, stale) and stop being a credential. The emailed link carries a `LoginToken` whose
@@ -313,9 +316,11 @@ auth-method distinction. Neither has a caller yet, which is the point of doing t
 
 Next, in order:
 
-1. **Speaker magic links (M1.4).** Gates M1.5 and M1.6, and PyOhio 2026's speakers are the waiting
-   audience. Must call `set_auth_method(request, AuthMethod.MAGIC_LINK)`.
-2. **Speaker authorization**, once M1.1 and M1.2 have created `Talk`, `Speaker`, and `Video`.
+1. ~~**Speaker magic links (M1.4).**~~ Built, and it does call
+   `set_auth_method(request, AuthMethod.MAGIC_LINK)`. Still needs a deployed hostname before a real
+   link can be sent to a real speaker.
+2. **Speaker authorization**, plus `Speaker.user` resolution by email at first login, which is what
+   turns a signed-in user into a speaker. `videos/authz.py` holds the predicates already.
 3. **Organizer SSO**, which is what makes the decorator reachable by a real session: nothing sets
    `AuthMethod.FEDERATED` yet, so only an operator password session passes it today.
 4. **Federated organizer login**, with the organizer interface. Not on the M1 critical path, because

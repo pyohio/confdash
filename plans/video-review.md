@@ -137,13 +137,21 @@ treatment. Not required for a speaker to review a video, so it must not gate M1.
 
 Passwordless login, needed before anyone can be invited.
 
-- Magic-link request and consume flow, tokens hashed at rest, single-use, expiring.
-- `Speaker.user` resolution by email on first login.
-- Authorization: a speaker may only see videos for talks they are a speaker on.
-- Rate limiting on link requests, and no user-existence disclosure in the response.
+- Magic-link request and consume flow, tokens hashed at rest, single-use, expiring: **built**, in
+  `accounts/tokens.py`, `accounts/services.py`, and `accounts/views.py`. Consumed by POST from an
+  interstitial, since mail scanners prefetch links and would spend a single-use GET. Two lifetimes: a
+  week for an invitation, fifteen minutes for a self-service request.
+- Rate limiting on link requests, and no user-existence disclosure: **built**. Unknown, inactive, and
+  throttled addresses all reach the same page as a successful send, because anything else turns the
+  login form into a way to test who spoke at a conference. Throttling is per address; see `issues.md`.
+- `Speaker.user` resolution by email on first login: **not built**, and it is what makes a signed-in
+  speaker into a speaker rather than just a user. Wants doing with speaker authorization.
+- Authorization: a speaker may only see videos for talks they are a speaker on. `videos/authz.py` has
+  the predicates; nothing routes to them yet, because M1.5 is the surface they protect.
 
 Done when a speaker can click an emailed link and land on their own video, and cannot reach
-anyone else's.
+anyone else's. Not there yet: login works and refuses organizer access, but there is no speaker-facing
+video page to land on, and no hostname to send a real link to.
 
 Email is settled: Anymail with Mailgun, sending from confdash.org for the whole deployment. Still
 needs a deployment with a real hostname, since a magic link has to point somewhere, and DNS

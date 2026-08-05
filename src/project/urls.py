@@ -30,5 +30,6 @@ ORGANIZER_PREFIX = "o/<slug:organization_slug>/<slug:event_slug>/"
 urlpatterns = [
     path("healthz/", healthz, name="healthz"),
     path("admin/", admin.site.urls),
+    path("accounts/", include("accounts.urls")),
     path(f"{ORGANIZER_PREFIX}videos/", include("videos.urls")),
 ]

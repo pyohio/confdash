@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Signed in{% endblock %}
+
+{% block content %}
+  <div class="mx-auto max-w-md">
+    <div class="card bg-base-100 shadow-sm">
+      <div class="card-body gap-3">
+        <h1 class="text-xl font-semibold">You are signed in</h1>
+        <p class="text-sm opacity-70">
+          Signed in as {{ request.user.email }}. Video review arrives in M1.5; until then a link with no
+          destination lands here.
+        </p>
+      </div>
+    </div>
+  </div>
+{% endblock %}
