@@ -16,6 +16,7 @@ Nothing here depends on it at runtime; treat it as reference material only.
 ```bash
 just                      # list all recipes
 just up / down / bounce   # docker-compose stack; bounce after dependency changes
+just status               # what is running, health, and host ports
 just follow               # tail logs
 just manage <cmd>         # any manage.py command
 just migrate / makemigrations

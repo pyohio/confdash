@@ -68,6 +68,14 @@ follow *ARGS:
     just host-only
     docker compose logs --follow {{ARGS}}
 
+# What is running, whether it is healthy, and which host ports it holds.
+#
+# `{{{{` emits a literal `{{` so docker gets its own Go template instead of just trying to
+# interpolate one. Closing braces need no escaping: only `{{` opens an interpolation.
+status *ARGS:
+    just host-only
+    docker compose ps --all --format "table {{{{.Service}}\t{{{{.Status}}\t{{{{.Ports}}" {{ARGS}}
+
 # Run any manage.py command, e.g. `just manage createsuperuser`.
 manage *ARGS:
     @{{EXEC}} python src/manage.py "$@"
